@@ -1,0 +1,582 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SoleSignal BLE Demo</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      background: #0a0a0a;
+      color: #e0e0e0;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 40px 20px;
+    }
+
+    header { text-align: center; margin-bottom: 40px; }
+    header h1 { font-size: 2rem; letter-spacing: 0.08em; color: #ffffff; }
+    header p  { color: #888; margin-top: 6px; font-size: 0.9rem; }
+
+    .card {
+      background: #141414;
+      border: 1px solid #2a2a2a;
+      border-radius: 12px;
+      padding: 28px;
+      width: 100%;
+      max-width: 580px;
+      margin-bottom: 20px;
+    }
+
+    .card h2 {
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      color: #666;
+      margin-bottom: 16px;
+    }
+
+    .status-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+
+    .dot {
+      width: 10px; height: 10px;
+      border-radius: 50%;
+      background: #333;
+      flex-shrink: 0;
+      transition: background 0.3s;
+    }
+    .dot.green  { background: #22c55e; box-shadow: 0 0 8px #22c55e88; }
+    .dot.yellow { background: #eab308; box-shadow: 0 0 8px #eab30888; }
+    .dot.red    { background: #ef4444; box-shadow: 0 0 8px #ef444488; }
+
+    .status-text { font-size: 0.9rem; color: #ccc; }
+
+    button {
+      display: block; width: 100%;
+      padding: 14px; border: none; border-radius: 8px;
+      font-size: 0.95rem; font-weight: 600; cursor: pointer;
+      transition: opacity 0.2s, background 0.2s;
+      margin-top: 8px; letter-spacing: 0.03em;
+    }
+    button:disabled { opacity: 0.35; cursor: not-allowed; }
+
+    #btn-scan { background: #2563eb; color: #fff; }
+    #btn-scan:not(:disabled):hover { background: #1d4ed8; }
+
+    #btn-disconnect {
+      background: #1f1f1f; color: #ef4444;
+      border: 1px solid #ef4444;
+    }
+    #btn-disconnect:not(:disabled):hover { background: #2c1212; }
+
+    .data-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+
+    .data-cell {
+      background: #1a1a1a;
+      border: 1px solid #2a2a2a;
+      border-radius: 8px;
+      padding: 14px 16px;
+    }
+    .data-cell .label {
+      font-size: 0.7rem; text-transform: uppercase;
+      letter-spacing: 0.1em; color: #555; margin-bottom: 6px;
+    }
+    .data-cell .value {
+      font-size: 1.4rem; font-weight: 700;
+      color: #fff; font-variant-numeric: tabular-nums;
+    }
+    .data-cell .unit { font-size: 0.7rem; color: #666; margin-left: 3px; }
+
+    /* Pattern status banner */
+    #pattern-banner {
+      border-radius: 8px;
+      padding: 14px 16px;
+      margin-top: 14px;
+      font-size: 0.9rem;
+      font-weight: 600;
+      text-align: center;
+      background: #1a1a1a;
+      border: 1px solid #2a2a2a;
+      color: #6b7280;
+      transition: background 0.3s, color 0.3s, border-color 0.3s;
+    }
+    #pattern-banner.watching {
+      background: #1c1a08;
+      border-color: #eab308;
+      color: #eab308;
+    }
+    #pattern-banner.valid {
+      background: #0a1f10;
+      border-color: #22c55e;
+      color: #22c55e;
+    }
+    #pattern-banner.rejected {
+      background: #1a0a0a;
+      border-color: #ef4444;
+      color: #ef4444;
+    }
+
+    /* Tap pip strip */
+    #tap-pips { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+    .pip {
+      width: 12px; height: 12px; border-radius: 50%;
+      background: #2a2a2a; transition: background 0.2s;
+    }
+    .pip.active { background: #22c55e; box-shadow: 0 0 6px #22c55e88; }
+
+    #log-container {
+      font-family: 'SF Mono', 'Fira Code', monospace;
+      font-size: 0.78rem;
+      background: #0d0d0d;
+      border: 1px solid #1e1e1e;
+      border-radius: 8px;
+      padding: 14px;
+      height: 220px;
+      overflow-y: auto;
+      color: #6b7280;
+    }
+    #log-container .entry { margin-bottom: 3px; line-height: 1.5; }
+    #log-container .entry.info  { color: #9ca3af; }
+    #log-container .entry.ok    { color: #22c55e; }
+    #log-container .entry.warn  { color: #eab308; }
+    #log-container .entry.error { color: #ef4444; }
+    #log-container .entry.data  { color: #60a5fa; }
+    #log-container .entry.alert { color: #f97316; font-weight: 700; }
+    #log-container .ts { color: #374151; margin-right: 6px; }
+
+    .raw-bytes {
+      font-family: 'SF Mono', 'Fira Code', monospace;
+      font-size: 0.8rem; color: #4b5563;
+      word-break: break-all; background: #111;
+      border-radius: 6px; padding: 10px 12px;
+      margin-top: 10px; min-height: 32px;
+    }
+
+    .placeholder-note {
+      font-size: 0.75rem; color: #555;
+      background: #111; border-left: 3px solid #2563eb;
+      padding: 10px 12px; border-radius: 0 6px 6px 0;
+      margin-bottom: 16px; line-height: 1.6;
+    }
+    .placeholder-note code {
+      background: #1e1e1e; padding: 1px 5px;
+      border-radius: 3px; color: #93c5fd; font-size: 0.73rem;
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>SoleSignal</h1>
+  <p>BLE Demo v1 &mdash; XIAO ESP32C3 &mdash; FSR 402 Insole Sensor</p>
+</header>
+
+<!-- ── Connection Card ─────────────────────────────── -->
+<div class="card">
+  <h2>Connection</h2>
+
+<div class="status-row">
+    <div class="dot" id="dot-ble"></div>
+    <span class="status-text" id="txt-ble">Bluetooth not checked</span>
+  </div>
+  <div class="status-row">
+    <div class="dot" id="dot-conn"></div>
+    <span class="status-text" id="txt-conn">Disconnected</span>
+  </div>
+
+  <button id="btn-scan">Scan &amp; Connect</button>
+  <button id="btn-disconnect" disabled>Disconnect</button>
+</div>
+
+<!-- ── Live Sensor Data Card ──────────────────────── -->
+<div class="card">
+  <h2>Live Sensor Data (FR-9)</h2>
+  <div class="data-grid">
+    <div class="data-cell">
+      <div class="label">Force (normalised)</div>
+      <div class="value" id="val-force">—</div>
+    </div>
+    <div class="data-cell">
+      <div class="label">Sensor Timestamp</div>
+      <div class="value" id="val-time">—<span class="unit">ms</span></div>
+    </div>
+    <div class="data-cell">
+      <div class="label">Tap Count (sensor)</div>
+      <div class="value" id="val-count">—</div>
+    </div>
+    <div class="data-cell">
+      <div class="label">Packets Received</div>
+      <div class="value" id="val-pkts">0</div>
+    </div>
+  </div>
+  <div class="raw-bytes" id="raw-bytes">Raw bytes will appear here</div>
+</div>
+
+<!-- ── Pattern Validation Card ───────────────────── -->
+<div class="card">
+  <h2>Tap Pattern Validation (FR-10)</h2>
+  <div class="data-grid">
+    <div class="data-cell">
+      <div class="label">Taps in window</div>
+      <div class="value" id="val-buf-count">0 / 3</div>
+    </div>
+    <div class="data-cell">
+      <div class="label">Last Force</div>
+      <div class="value" id="val-buf-force">—</div>
+    </div>
+  </div>
+
+  <div id="tap-pips">
+    <div class="pip" id="pip-0"></div>
+    <div class="pip" id="pip-1"></div>
+    <div class="pip" id="pip-2"></div>
+  </div>
+
+  <div id="pattern-banner">Waiting for taps…</div>
+</div>
+
+<!-- ── Event Log Card ─────────────────────────────── -->
+<div class="card">
+  <h2>Event Log</h2>
+  <div id="log-container"></div>
+</div>
+
+<script>
+  // ════════════════════════════════════════════════════════════════
+  //  CONFIGURATION  ── fill these in from the ESP32C3 firmware
+  // ════════════════════════════════════════════════════════════════
+
+  const SERVICE_UUID        = "12345678-1234-1234-1234-1234567890ab";
+  const CHARACTERISTIC_UUID = "99999999-8888-7777-6666-555555555555";
+
+  // ── Packet parser ────────────────────────────────────────────────
+  // Data arrives as a UTF-8 string from the ESP32C3.
+  //
+  // ASSUMED format — confirm with firmware (Om):
+  //   "timestamp,forceRaw,count"
+  //   e.g. "4821,2650,3"
+  //
+  //   timestamp : uint  sensor uptime in ms
+  //   forceRaw  : uint  raw FSR ADC value (0–4095, 12-bit ESP32 ADC)
+  //   count     : uint  cumulative tap count since power-on
+  //
+  // If the separator or field order is different, update below.
+  //
+  function parsePacket(dv) {
+    const text = new TextDecoder().decode(dv).trim();
+    const parts = text.split(",");
+
+    if (parts.length < 3) {
+      throw new Error(`Unexpected format: "${text}" (expected "timestamp,forceRaw,count")`);
+    }
+
+    const sensorTs = parseInt(parts[0], 10);
+    const forceRaw = parseInt(parts[1], 10);
+    const count    = parseInt(parts[2], 10);
+
+    if ([sensorTs, forceRaw, count].some(isNaN)) {
+      throw new Error(`Non-numeric field in: "${text}"`);
+    }
+
+    // Normalise force to 0.000–1.000 (12-bit ADC max = 4095)
+    const forceNorm = +(forceRaw / 4095).toFixed(3);
+
+    return { sensorTs, forceRaw, forceNorm, count };
+  }
+  // ════════════════════════════════════════════════════════════════
+
+  // ── Tap pattern validation rules (FR-10, mirrors demov0) ────────
+  const RULES = {
+    minTaps:       3,      // pattern requires exactly 3 taps
+    minForce:      0.6,    // normalised force threshold (0.0–1.0)
+    maxWindowMs:   1200,   // all taps must fall within this window
+    minIntervalMs: 150,    // minimum ms between consecutive taps
+    maxIntervalMs: 600,    // maximum ms between consecutive taps
+  };
+
+  // ── BLE state ────────────────────────────────────────────────────
+  let device         = null;
+  let characteristic = null;
+  let packetCount    = 0;
+
+  // Tap buffer: array of { t: Date.now(), forceNorm }
+  let tapBuffer = [];
+  let lastSensorCount = null;   // track sensor's own tap counter
+
+  // ── DOM refs ────────────────────────────────────────────────────
+  const dotBle   = document.getElementById("dot-ble");
+  const txtBle   = document.getElementById("txt-ble");
+  const dotConn  = document.getElementById("dot-conn");
+  const txtConn  = document.getElementById("txt-conn");
+  const btnScan  = document.getElementById("btn-scan");
+  const btnDisc  = document.getElementById("btn-disconnect");
+
+  const valForce    = document.getElementById("val-force");
+  const valTime     = document.getElementById("val-time");
+  const valCount    = document.getElementById("val-count");
+  const valPkts     = document.getElementById("val-pkts");
+  const rawBytes    = document.getElementById("raw-bytes");
+  const valBufCount = document.getElementById("val-buf-count");
+  const valBufForce = document.getElementById("val-buf-force");
+  const banner      = document.getElementById("pattern-banner");
+  const pips        = [0, 1, 2].map(i => document.getElementById(`pip-${i}`));
+  const logBox      = document.getElementById("log-container");
+
+  // ── Logging ──────────────────────────────────────────────────────
+  function log(msg, level = "info") {
+    const ts  = new Date().toLocaleTimeString("en-US", { hour12: false });
+    const div = document.createElement("div");
+    div.className = `entry ${level}`;
+    div.innerHTML = `<span class="ts">${ts}</span>${msg}`;
+    logBox.appendChild(div);
+    logBox.scrollTop = logBox.scrollHeight;
+  }
+
+  // ── Bluetooth check ──────────────────────────────────────────────
+  async function checkBluetooth() {
+    if (!navigator.bluetooth) {
+      dotBle.className = "dot red";
+      txtBle.textContent = "Web Bluetooth not supported (use Chrome/Edge on desktop or Android)";
+      log("Web Bluetooth API unavailable.", "error");
+      btnScan.disabled = true;
+      return false;
+    }
+    const available = await navigator.bluetooth.getAvailability();
+    if (!available) {
+      dotBle.className = "dot red";
+      txtBle.textContent = "Bluetooth adapter off or unavailable";
+      log("No Bluetooth adapter found.", "warn");
+      btnScan.disabled = true;
+      return false;
+    }
+    dotBle.className = "dot green";
+    txtBle.textContent = "Bluetooth ready";
+    log("Bluetooth adapter ready.", "ok");
+    return true;
+  }
+
+  // ── Connect ──────────────────────────────────────────────────────
+  async function connect() {
+    btnScan.disabled = true;
+    log("Opening BLE device picker…", "info");
+
+    try {
+      device = await navigator.bluetooth.requestDevice({
+        filters: [{ services: [SERVICE_UUID] }],
+        optionalServices: [SERVICE_UUID],
+      });
+
+      log(`Device selected: "${device.name || device.id}"`, "ok");
+      device.addEventListener("gattserverdisconnected", onDisconnected);
+
+      dotConn.className = "dot yellow";
+      txtConn.textContent = "Connecting…";
+
+      const server = await device.gatt.connect();
+      log("GATT server connected.", "ok");
+
+      const service = await server.getPrimaryService(SERVICE_UUID);
+      log(`Service found: ${SERVICE_UUID}`, "ok");
+
+      characteristic = await service.getCharacteristic(CHARACTERISTIC_UUID);
+      log(`Characteristic found: ${CHARACTERISTIC_UUID}`, "ok");
+
+      await characteristic.startNotifications();
+      characteristic.addEventListener("characteristicvaluechanged", onData);
+      log("Notifications started — waiting for sensor data (FR-9)…", "ok");
+
+      dotConn.className = "dot green";
+      txtConn.textContent = `Connected — ${device.name || device.id}`;
+      btnDisc.disabled = false;
+
+    } catch (err) {
+      log(`Connection failed: ${err.message}`, "error");
+      dotConn.className = "dot red";
+      txtConn.textContent = "Connection failed";
+      btnScan.disabled = false;
+    }
+  }
+
+  // ── Data handler ─────────────────────────────────────────────────
+  function onData(event) {
+    const dv = event.target.value;
+    packetCount++;
+
+    // Raw hex display
+    rawBytes.textContent = Array.from({ length: dv.byteLength }, (_, i) =>
+      dv.getUint8(i).toString(16).padStart(2, "0")
+    ).join(" ") || "(empty)";
+
+    // Parse packet
+    let p;
+    try {
+      p = parsePacket(dv);
+    } catch (e) {
+      log(`Parse error: ${e.message}`, "error");
+      valPkts.textContent = packetCount;
+      return;
+    }
+
+    // Update live data display
+    valPkts.textContent = packetCount;
+    valForce.innerHTML  = `${p.forceNorm}<span class="unit"> (${p.forceRaw} ADC)</span>`;
+    valTime.innerHTML   = `${p.sensorTs}<span class="unit"> ms</span>`;
+    valCount.textContent = p.count;
+
+    // Detect a new tap: sensor's count incremented since last packet
+    const isTap = (lastSensorCount !== null) && (p.count !== lastSensorCount);
+    lastSensorCount = p.count;
+
+    if (isTap) {
+      handleTap(p.forceNorm);
+    }
+  }
+
+  // ── Tap pattern logic (FR-10) ─────────────────────────────────────
+  function handleTap(forceNorm) {
+    const now = Date.now();
+
+    // Expire taps outside the activation window
+    tapBuffer = tapBuffer.filter(t => now - t.t <= RULES.maxWindowMs);
+
+    // Add new tap to buffer
+    tapBuffer.push({ t: now, forceNorm });
+    log(`Tap detected — force=${forceNorm}  buffer=${tapBuffer.length}/${RULES.minTaps}`, "data");
+
+    updatePatternUI();
+
+    if (tapBuffer.length >= RULES.minTaps) {
+      evaluatePattern();
+    }
+  }
+
+  function evaluatePattern() {
+    const result = validatePattern(tapBuffer, RULES);
+
+    if (result.isValid) {
+      showBanner("valid", `VALID PATTERN DETECTED — ${tapBuffer.length} taps`);
+      log(`VALID emergency pattern! force=${result.minForce}–${result.maxForce}  window=${result.windowMs}ms`, "alert");
+      tapBuffer = [];
+      updatePatternUI();
+    } else {
+      showBanner("rejected", `Pattern rejected: ${result.reason}`);
+      log(`Pattern rejected: ${result.reason}`, "warn");
+      // clear buffer so next attempt starts fresh
+      tapBuffer = [];
+      updatePatternUI();
+    }
+  }
+
+  // Validation logic matching demov0 rules and FR-10
+  function validatePattern(taps, rules) {
+    if (taps.length < rules.minTaps) {
+      return { isValid: false, reason: `only ${taps.length} taps (need ${rules.minTaps})` };
+    }
+
+    const sorted = [...taps].sort((a, b) => a.t - b.t);
+    const windowMs = sorted[sorted.length - 1].t - sorted[0].t;
+
+    if (windowMs > rules.maxWindowMs) {
+      return { isValid: false, reason: `window ${windowMs}ms > max ${rules.maxWindowMs}ms` };
+    }
+
+    for (let i = 1; i < sorted.length; i++) {
+      const interval = sorted[i].t - sorted[i - 1].t;
+      if (interval < rules.minIntervalMs) {
+        return { isValid: false, reason: `interval ${interval}ms < min ${rules.minIntervalMs}ms` };
+      }
+      if (interval > rules.maxIntervalMs) {
+        return { isValid: false, reason: `interval ${interval}ms > max ${rules.maxIntervalMs}ms` };
+      }
+    }
+
+    const forces = sorted.map(t => t.forceNorm);
+    const minForce = Math.min(...forces);
+    if (minForce < rules.minForce) {
+      return { isValid: false, reason: `force ${minForce} below threshold ${rules.minForce}` };
+    }
+
+    return {
+      isValid: true,
+      windowMs,
+      minForce: +minForce.toFixed(3),
+      maxForce: +(Math.max(...forces)).toFixed(3),
+    };
+  }
+
+  // ── Pattern UI helpers ──────────────────────────────────────────
+  function updatePatternUI() {
+    const n = tapBuffer.length;
+    valBufCount.textContent = `${n} / ${RULES.minTaps}`;
+    valBufForce.textContent = n > 0
+      ? tapBuffer[tapBuffer.length - 1].forceNorm.toFixed(3)
+      : "—";
+
+    pips.forEach((pip, i) => {
+      pip.classList.toggle("active", i < n);
+    });
+
+    if (n > 0 && n < RULES.minTaps) {
+      showBanner("watching", `Watching… ${n} of ${RULES.minTaps} taps`);
+    } else if (n === 0 && banner.className === "") {
+      showBanner("", "Waiting for taps…");
+    }
+  }
+
+  function showBanner(state, msg) {
+    banner.className = state ? `${state}` : "";
+    banner.textContent = msg;
+
+    if (state === "valid" || state === "rejected") {
+      setTimeout(() => {
+        banner.className = "";
+        banner.textContent = "Waiting for taps…";
+      }, 3000);
+    }
+  }
+
+  // ── Disconnect ───────────────────────────────────────────────────
+  function onDisconnected() {
+    dotConn.className = "dot red";
+    txtConn.textContent = "Disconnected";
+    btnScan.disabled = false;
+    btnDisc.disabled = true;
+    characteristic = null;
+    tapBuffer = [];
+    lastSensorCount = null;
+    updatePatternUI();
+    log("Device disconnected (FR-8).", "warn");
+  }
+
+  async function disconnect() {
+    if (characteristic) {
+      try { await characteristic.stopNotifications(); } catch (_) {}
+    }
+    if (device && device.gatt.connected) {
+      device.gatt.disconnect();
+    }
+  }
+
+  // ── Wiring ───────────────────────────────────────────────────────
+  btnScan.addEventListener("click", async () => {
+    if (await checkBluetooth()) await connect();
+  });
+  btnDisc.addEventListener("click", disconnect);
+
+  checkBluetooth();
+</script>
+</body>
+</html>
