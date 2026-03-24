@@ -21,6 +21,7 @@ model User {
   phone_number  String
   password_hash String
   is_verified   Boolean          @default(false)
+  last_login    DateTime?
   created_at    DateTime         @default(now())
   updated_at    DateTime         @updatedAt
 
@@ -54,7 +55,7 @@ model EmergencyContact {
   user_id      Int
   name         String
   phone_number String
-  is_valid     Boolean  @default(true)
+  is_valid     Boolean  @default(false)
   created_at   DateTime @default(now())
   updated_at   DateTime @updatedAt
 

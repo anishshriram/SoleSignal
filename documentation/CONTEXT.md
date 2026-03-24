@@ -1,7 +1,11 @@
 # SoleSignal — Project Context
 
-> This file is the quick-start context for Claude in VSCode.
-> For full details, refer to `Software_Documentation__Master_v0_.pdf` in this project.
+> **PRIMARY REFERENCE: `Software Documentation (Master v0).pdf`**
+> This file is the authoritative source of truth for all requirements, API specs, data models,
+> business rules, and architecture decisions. When this file and the PDF conflict, the PDF wins.
+> Always consult the PDF before making implementation decisions.
+>
+> This CONTEXT.md is a quick-start summary only. Do not treat it as a substitute for the PDF.
 
 ---
 
@@ -27,9 +31,8 @@ threats, accidents, etc.).
 - **Feedback:** Vibration motor for haptic confirmation
 - **Power:** 3.7V LiPo battery
 
-The hardware transmits tap-pattern data (timestamp, force, count) to the paired mobile app
-over BLE. Hardware, firmware, and signal processing are considered external to the software
-scope and are managed by separate team members.
+Hardware, firmware, and signal processing are external to the software scope and are managed
+by separate team members (Om Patel, Seungmin Baik, Rishi Patel).
 
 ---
 
@@ -66,21 +69,21 @@ exactly five things in order:
 | Layer | Decision |
 |-------|----------|
 | Alert delivery | Twilio API (SMS) |
-| Database | PostgreSQL (relational, foreign key structure) |
+| Database | SQLite for MVP (Prisma ORM), adaptable to PostgreSQL |
 | Authentication | JWT (JSON Web Tokens), 24hr expiry, no refresh token for MVP |
-| Backend architecture | REST API |
+| Backend architecture | REST API (Node.js + Express + TypeScript) |
 | BLE demo | Web Bluetooth API, single HTML file, Chromium browsers only |
 | Secure token storage | iOS Keychain / Android Keystore |
 
 ---
 
-## Backend — Key Entities
+## Backend — Key Entities (see PDF Domain Model for full attribute list)
 
 | Entity | Key Attributes |
 |--------|----------------|
-| User | id, name, email, phone_number, password_hash, is_verified |
+| User | id, name, email, phone_number, password_hash, is_verified, last_login |
 | Sensor | id, sensor_id, user_id, is_paired, is_calibrating, last_connected |
-| Emergency Contact | id, user_id, name, phone_number, is_valid |
+| Emergency Contact | id, user_id, name, phone_number, is_valid (default false) |
 | Alert | id, user_id, sensor_id, contact_id, gps_latitude, gps_longitude, location_available, timestamp, delivery_status, retry_count |
 
 ### Entity Relationships
@@ -135,46 +138,6 @@ seconds of pattern recognition assuming cellular service is available (NFR-1).
 - Raw motion data must not persist — RAM only, never written to storage
 - Continuous GPS tracking is disabled by default
 - Normal activities (walking, running) must never trigger a false alert
-
----
-
-## Current Task — BLE Demo Web App
-
-**Goal:** Prove that a browser-based web app can scan for, connect to, and read data from
-the Seeed Studio XIAO ESP32C3 over BLE.
-
-**What is being built:** A single self-contained HTML file using the Web Bluetooth API.
-
-**Features:**
-- Scan button (opens native browser BLE device picker)
-- Connection status indicator
-- Live data display panel showing incoming characteristic data
-- Disconnect button
-
-**Browser requirement:** Chromium-based only (Chrome, Edge, Opera). Web Bluetooth is
-not supported in Firefox or Safari.
-
-**⚠️ Pending — fill these in before testing:**
-
-```
-SERVICE_UUID      = "XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX"  // BLE service the ESP32C3 advertises
-CHARACTERISTIC_UUID = "XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX"  // Characteristic to read/notify on
-DATA_FORMAT       = // Describe what the incoming bytes represent (e.g. "3 comma-separated ints: count,force,timestamp")
-```
-
-These values come from the ESP32C3 firmware. Once known, replace the placeholders in
-`ble_demo.html` and the connection will work.
-
----
-
-## Known Issues / Open Items in the Documentation
-
-1. Developer comments still present in Software Requirements — `// THIS SECTION IS SOMETHING SEUNG WILL HAVE TO WORK ON REFINING` and `// NFR-2, 3 SHALL BE FURTHER REFINED` should be cleaned up
-2. Internal note `**potential feature that allows for tests that an emergency contact is valid**` still present in Architecture section
-3. Haptic feedback appears in UC-5 success guarantees but has no corresponding FR or module ownership defined
-4. Cancel/confirmation window described in hardware design has no FR or API endpoint
-5. Business Glossary is still empty (Sensor, Activation Window, Tap Threshold need definitions)
-6. MVP Hardware and Signal Processing sections in the MVP Definition are blank
 
 ---
 

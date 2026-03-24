@@ -1,11 +1,9 @@
 import 'dotenv/config'; // Load environment variables
 import express from 'express';
-import { PrismaClient } from './node_modules/.prisma/client/client.js'; // Prisma client
 import usersRouter from './routes/users.js'; // User routes (register, login)
 import contactsRouter from './routes/contacts.js'; // Emergency contact routes
 
 const app = express();
-const prisma = new PrismaClient(); // Database client
 
 // Middleware
 app.use(express.json()); // Parse JSON request bodies
