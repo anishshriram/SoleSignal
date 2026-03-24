@@ -1,0 +1,88 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client"
+  output   = "../node_modules/.prisma/client"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+model User {
+  id            Int              @id @default(autoincrement())
+  name          String
+  email         String           @unique
+  phone_number  String
+  password_hash String
+  is_verified   Boolean          @default(false)
+  created_at    DateTime         @default(now())
+  updated_at    DateTime         @updatedAt
+
+  // Relations
+  sensor         Sensor?
+  contacts       EmergencyContact[]
+  alerts         Alert[]
+
+  @@map("users")
+}
+
+model Sensor {
+  id             Int      @id @default(autoincrement())
+  sensor_id      String   @unique
+  user_id        Int      @unique
+  is_paired      Boolean  @default(false)
+  is_calibrating Boolean  @default(false)
+  last_connected DateTime?
+  created_at     DateTime @default(now())
+  updated_at     DateTime @updatedAt
+
+  // Relations
+  user   User    @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  alerts Alert[]
+
+  @@map("sensors")
+}
+
+model EmergencyContact {
+  id           Int      @id @default(autoincrement())
+  user_id      Int
+  name         String
+  phone_number String
+  is_valid     Boolean  @default(true)
+  created_at   DateTime @default(now())
+  updated_at   DateTime @updatedAt
+
+  // Relations
+  user    User    @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  alerts  Alert[]
+
+  @@map("emergency_contacts")
+}
+
+model Alert {
+  id                  Int       @id @default(autoincrement())
+  user_id             Int
+  sensor_id           Int
+  contact_id          Int
+  gps_latitude        Float?
+  gps_longitude       Float?
+  location_available  Boolean  @default(false)
+  timestamp           DateTime @default(now())
+  delivery_status     String   @default("pending") // pending, sent, failed
+  retry_count         Int      @default(0)
+  created_at          DateTime @default(now())
+  updated_at          DateTime @updatedAt
+
+  // Relations
+  user    User              @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  sensor  Sensor            @relation(fields: [sensor_id], references: [id], onDelete: Cascade)
+  contact EmergencyContact  @relation(fields: [contact_id], references: [id], onDelete: Cascade)
+
+  @@map("alerts")
+}
