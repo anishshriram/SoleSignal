@@ -18,6 +18,14 @@
 - Added "type": "module" then reverted to CommonJS for compatibility.
 - Installed ts-node for potential TypeScript support.
 - Server is running on port 3000 (Prisma commented out for now, to be fixed).
+- Committed and pushed Day 1 changes to GitHub repository at https://github.com/anishshriram/SoleSignal.git.
+- Implemented Day 2: API endpoints for user registration (/users/register), login (/users/login), and adding emergency contacts (/contacts) with JWT authentication.
+- Created middleware/auth.ts for JWT token verification.
+- Created routes/users.ts with registration and login logic, including password hashing, validation, and JWT generation.
+- Created routes/contacts.ts with protected route for adding contacts.
+- Added clear comments to all routes and models.
+- Updated server.ts to mount routes and use ES modules with tsx for TypeScript support.
+- Prisma import issues persist; routes use direct path to generated client.
 
 ### Decisions
 - Backend: Node.js with Express, PostgreSQL via Docker, Prisma for ORM.
@@ -25,6 +33,9 @@
 - Timeline: 1-week sprint with daily milestones.
 - Dependencies: Chose bcryptjs over bcrypt for cross-platform compatibility; Prisma for type-safe database interactions.
 - Database: Switched to SQLite for MVP speed (no external setup needed); can migrate to PostgreSQL later by changing provider and URL.
-- Modules: Used CommonJS for Node.js compatibility with Prisma generated client.
-- Prisma Import: Temporarily commented out due to generation issues; will resolve in Day 2.</content>
+- Modules: Used CommonJS initially, switched to ES modules with TypeScript for better development experience.
+- Prisma Import: Used custom output path; import from generated client directory.
+- JWT: 24h expiry, no refresh token as per MVP.
+- API: RESTful endpoints with JSON responses, error handling, and input validation.
+- Comments: JSDoc for functions, inline for logic.</content>
 <parameter name="filePath">/Users/anishshriram/Desktop/SoleSignal/SoleSignal/changelog.md
