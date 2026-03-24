@@ -1,23 +1,23 @@
-import 'dotenv/config'; // Load environment variables
+import 'dotenv/config';
 import express from 'express';
-import usersRouter from './routes/users.js'; // User routes (register, login)
-import contactsRouter from './routes/contacts.js'; // Emergency contact routes
+import usersRouter from './routes/users.js';
+import contactsRouter from './routes/contacts.js';
+import sensorsRouter from './routes/sensors.js';
+import alertsRouter from './routes/alerts.js';
 
 const app = express();
 
-// Middleware
-app.use(express.json()); // Parse JSON request bodies
+app.use(express.json());
 
-// Routes
-app.use('/users', usersRouter); // Mount user routes at /users
-app.use('/contacts', contactsRouter); // Mount contact routes at /contacts
+app.use('/users', usersRouter);
+app.use('/contacts', contactsRouter);
+app.use('/sensors', sensorsRouter);
+app.use('/alerts', alertsRouter);
 
-// Basic route
-app.get('/', (req, res) => {
+app.get('/', (_req, res) => {
   res.json({ message: 'SoleSignal API is running' });
 });
 
-// Start server
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
