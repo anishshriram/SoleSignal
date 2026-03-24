@@ -1,6 +1,6 @@
 // Alert routes: sendAlert (placeholder), getAlertStatus
 import express from 'express';
-import { PrismaClient } from '../node_modules/.prisma/client/client.js';
+import { PrismaClient } from '@prisma/client';
 import { authenticateToken } from '../middleware/auth.js';
 
 const router = express.Router();
