@@ -34,15 +34,15 @@ Build the SoleSignal MVP backend and mobile app. The backend is a REST API (Node
 - [x] `POST /contacts` — addContact() — phone format validation, ownership from token
 
 ### Stage 3 — Remaining Backend APIs
-- [ ] `PATCH /users/{id}` — updateUserProfile()
-- [ ] `POST /users/logout` — logoutUser()
-- [ ] `POST /sensors/pair` — pairSensor()
-- [ ] `GET /sensors/{id}` — getSensorStatus()
-- [ ] `GET /contacts` — getContacts()
-- [ ] `PATCH /contacts/{id}` — updateContact()
-- [ ] `DELETE /contacts/{id}` — deleteContact()
-- [ ] `POST /alerts` — sendAlert() + Twilio integration
-- [ ] `GET /alerts/{id}` — getAlertStatus()
+- [x] `PATCH /users/{id}` — updateUserProfile()
+- [x] `POST /users/logout` — logoutUser()
+- [x] `POST /sensors/pair` — pairSensor()
+- [x] `GET /sensors/{id}` — getSensorStatus()
+- [x] `GET /contacts` — getContacts()
+- [x] `PATCH /contacts/{id}` — updateContact()
+- [x] `DELETE /contacts/{id}` — deleteContact()
+- [x] `POST /alerts` — sendAlert() (Twilio placeholder — awaiting account)
+- [x] `GET /alerts/{id}` — getAlertStatus()
 
 ### Stage 4 — Mobile App
 - [ ] React Native project setup
@@ -64,24 +64,20 @@ Build the SoleSignal MVP backend and mobile app. The backend is a REST API (Node
 
 ## Progress Percentage
 
-**~20%** — Backend foundation complete and 3 of 12 API endpoints implemented. No mobile app yet.
+**~50%** — All 12 backend API endpoints implemented (Twilio placeholder in place). No mobile app yet.
 
 ---
 
 ## Next Actions to be Implemented
 
-1. Complete remaining 9 backend API endpoints (Stage 3), starting with:
-   - `PATCH /users/{id}` — updateUserProfile()
-   - `POST /users/logout` — logoutUser()
-   - `POST /sensors/pair` — pairSensor()
-   - `GET /sensors/{id}` — getSensorStatus()
-   - `GET /contacts` — getContacts()
-   - `PATCH /contacts/{id}` — updateContact()
-   - `DELETE /contacts/{id}` — deleteContact()
-   - `POST /alerts` — sendAlert() with Twilio
-   - `GET /alerts/{id}` — getAlertStatus()
-2. Install and configure Twilio SDK for SMS delivery
-3. Begin React Native mobile app setup (Stage 4)
+1. Set up Twilio account and wire in SMS delivery to `POST /alerts` (`routes/alerts.ts`)
+2. Begin React Native mobile app setup (Stage 4):
+   - Project init
+   - Registration + login screens
+   - BLE sensor pairing screen
+   - Emergency contacts management screen
+   - Alert trigger flow
+   - Onboarding flow
 
 ---
 
