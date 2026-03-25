@@ -52,9 +52,38 @@ router.post('/pair', authenticateToken, async (req, res) => {
       });
     }
 
-    res.status(200).json({ message: 'Sensor paired successfully', sensor_id });
+    const paired = await prisma.sensor.findUnique({ where: { sensor_id } });
+    res.status(200).json({ message: 'Sensor paired successfully', sensor_id, id: paired!.id });
   } catch (error) {
     console.error('Pair sensor error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/**
+ * GET /sensors/me
+ * Protected. Returns the authenticated user's sensor.
+ * Returns: { id, sensor_id, is_paired, is_calibrating, last_connected }
+ */
+router.get('/me', authenticateToken, async (req, res) => {
+  try {
+    const sensor = await prisma.sensor.findUnique({
+      where: { user_id: req.user!.user_id },
+    });
+
+    if (!sensor) {
+      return res.status(404).json({ error: 'No sensor paired to this account' });
+    }
+
+    res.status(200).json({
+      id: sensor.id,
+      sensor_id: sensor.sensor_id,
+      is_paired: sensor.is_paired,
+      is_calibrating: sensor.is_calibrating,
+      last_connected: sensor.last_connected,
+    });
+  } catch (error) {
+    console.error('Get my sensor error:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });

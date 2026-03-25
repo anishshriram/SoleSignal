@@ -72,8 +72,13 @@ exactly five things in order:
 | Database | SQLite for MVP (Prisma ORM), adaptable to PostgreSQL |
 | Authentication | JWT (JSON Web Tokens), 24hr expiry, no refresh token for MVP |
 | Backend architecture | REST API (Node.js + Express + TypeScript) |
-| BLE demo | Web Bluetooth API, single HTML file, Chromium browsers only |
-| Secure token storage | iOS Keychain / Android Keystore |
+| Mobile platform | iOS only (bare React Native CLI — no Expo) |
+| Mobile theme | Scarlet `#CC0033`, Black `#000000`, White `#FFFFFF` (Rutgers University) |
+| BLE | `react-native-ble-plx` |
+| Secure token storage | iOS Keychain via `react-native-keychain` |
+| Navigation | React Navigation stack (`@react-navigation/native` + `@react-navigation/stack`) |
+| HTTP client | Axios |
+| BLE demo (legacy) | Web Bluetooth API, single HTML file, Chromium browsers only |
 
 ---
 
@@ -114,6 +119,21 @@ exactly five things in order:
 
 All protected endpoints require `Authorization: Bearer <token>` in the header.
 Ownership is enforced — user_id is extracted from the token, never trusted from the request body.
+
+---
+
+## Mobile App — Screens
+
+| Screen | Purpose |
+|--------|---------|
+| Register | Create account (name, email, phone, password) |
+| Login | Authenticate, receive + store JWT in Keychain |
+| Home | Show sensor status, trigger alert button |
+| Pairing | BLE scan, connect, and pair sensor |
+| Contacts | List emergency contacts, add / edit / delete |
+| Alert Sent | Confirmation screen after alert dispatched |
+
+**Onboarding flow:** Register → Pairing → Contacts → Home
 
 ---
 

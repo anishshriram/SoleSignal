@@ -45,12 +45,31 @@ Build the SoleSignal MVP backend and mobile app. The backend is a REST API (Node
 - [x] `GET /alerts/{id}` — getAlertStatus()
 
 ### Stage 4 — Mobile App
-- [ ] React Native project setup
-- [ ] Registration + login screens
-- [ ] BLE sensor pairing screen (FR-5, FR-6, FR-7, FR-8)
-- [ ] Emergency contacts management screen (FR-17, FR-18, FR-19)
-- [ ] Alert trigger flow (FR-13, FR-14, FR-15, FR-16)
-- [ ] Onboarding flow (register → pair → add contact)
+- [x] React Native (bare CLI) project initialized in `mobile/`
+- [x] Theme constants: Scarlet `#CC0033`, Black `#000000`, White `#FFFFFF`
+- [x] React Navigation stack configured
+- [x] Axios API service pointing to backend
+- [x] iOS Keychain integration (`react-native-keychain`) for secure JWT storage
+- [x] BLE service module (`react-native-ble-plx`)
+- [x] Register screen
+- [x] Login screen
+- [x] Home screen (paired sensor status + alert trigger)
+- [x] Pairing screen (BLE scan + connect)
+- [x] Contacts screen (list, add, edit, delete)
+- [x] Alert Sent screen (confirmation)
+- [x] Onboarding flow (Register → Pair → Add Contact → Home)
+- [x] iOS Info.plist permissions (Bluetooth, Location When In Use)
+- [x] CocoaPods installed (81 pods)
+- [x] BLEContext — shares connected device + sensor DB id across screens
+- [x] BLE tap pattern monitoring wired to auto-trigger alert in HomeScreen
+- [x] GPS one-shot at alert time (`@react-native-community/geolocation`, 3 s timeout, falls back gracefully)
+- [x] `GET /sensors/me` backend endpoint (returns user's sensor by JWT — no DB id needed from client)
+- [x] `POST /sensors/pair` now returns sensor DB `id` in response
+- [x] HomeScreen sensor lookup fixed (was using wrong ID)
+
+**Platform:** iOS only (bare React Native CLI, tested via Xcode on personal device)
+**Theme:** Scarlet `#CC0033` / Black `#000000` / White `#FFFFFF` (Rutgers University)
+**Key deps:** `react-native-ble-plx`, `react-native-keychain`, `@react-navigation/native`, `@react-navigation/native-stack`, `axios`, `@react-native-community/geolocation`
 
 ### Stage 5 — Testing
 - [ ] API endpoint tests
@@ -64,20 +83,15 @@ Build the SoleSignal MVP backend and mobile app. The backend is a REST API (Node
 
 ## Progress Percentage
 
-**~50%** — All 12 backend API endpoints implemented (Twilio placeholder in place). No mobile app yet.
+**~75%** — All 12 backend endpoints done (+ `GET /sensors/me`). Mobile app screens complete, BLE tap-to-alert loop wired, GPS at alert time. Twilio SMS still a placeholder (awaiting account). Not yet run on device.
 
 ---
 
 ## Next Actions to be Implemented
 
-1. Set up Twilio account and wire in SMS delivery to `POST /alerts` (`routes/alerts.ts`)
-2. Begin React Native mobile app setup (Stage 4):
-   - Project init
-   - Registration + login screens
-   - BLE sensor pairing screen
-   - Emergency contacts management screen
-   - Alert trigger flow
-   - Onboarding flow
+1. **First device run** — open `mobile/ios/SoleSignalMobile.xcworkspace` in Xcode, set your team signing, connect iPhone, run. Fix any build errors.
+2. **Wire Twilio** — set up account, add `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM_NUMBER` to `.env`, implement SMS dispatch in `backend/routes/alerts.ts`
+3. **Stage 5** — API tests and end-to-end alert flow test
 
 ---
 
