@@ -51,11 +51,7 @@ router.get('/', authenticateToken, async (req, res) => {
       select: { id: true, name: true, phone_number: true, is_valid: true }
     });
 
-    if (contacts.length === 0) {
-      return res.status(404).json({ error: 'No contacts found for this user' });
-    }
-
-    res.status(200).json(contacts);
+    res.status(200).json({ contacts });
   } catch (error) {
     console.error('Get contacts error:', error);
     res.status(500).json({ error: 'Internal server error' });

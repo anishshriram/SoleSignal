@@ -33,7 +33,7 @@ router.post('/', authenticateToken, async (req, res) => {
     }
 
     // Verify the sensor belongs to this user and is not in calibration mode
-    const sensor = await prisma.sensor.findUnique({ where: { id: parseInt(sensor_id, 10) } });
+    const sensor = await prisma.sensor.findUnique({ where: { id: Number(sensor_id) } });
     if (!sensor || sensor.user_id !== user_id) {
       return res.status(404).json({ error: 'Sensor not found' });
     }
@@ -42,7 +42,7 @@ router.post('/', authenticateToken, async (req, res) => {
     }
 
     // Verify the contact belongs to this user
-    const contact = await prisma.emergencyContact.findUnique({ where: { id: parseInt(contact_id, 10) } });
+    const contact = await prisma.emergencyContact.findUnique({ where: { id: Number(contact_id) } });
     if (!contact || contact.user_id !== user_id) {
       return res.status(404).json({ error: 'Emergency contact not found' });
     }
