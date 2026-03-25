@@ -9,8 +9,8 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
-  url      = "file:./dev.db"
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
 }
 
 model User {
@@ -74,7 +74,7 @@ model Alert {
   gps_longitude       Float?
   location_available  Boolean  @default(false)
   timestamp           DateTime @default(now())
-  delivery_status     String   @default("pending") // pending, sent, failed
+  delivery_status     String   @default("pending") // pending, delivered, failed
   retry_count         Int      @default(0)
   created_at          DateTime @default(now())
   updated_at          DateTime @updatedAt

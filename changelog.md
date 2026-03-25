@@ -97,7 +97,7 @@ Build the SoleSignal MVP backend and mobile app. The backend is a REST API (Node
 
 ## Decisions
 
-- **Database:** SQLite for MVP speed (Prisma makes migration to PostgreSQL straightforward later)
+- **Database:** PostgreSQL (per PDF spec) — local Homebrew install for dev (`solesignal` db, port 5432). Prisma migrations in `prisma/migrations/`.
 - **JWT:** 24hr expiry, no refresh token, stateless logout (client deletes token)
 - **Ownership:** `user_id` always extracted from JWT token, never from request body
 - **Password:** bcryptjs (cross-platform), minimum 8 characters per spec
