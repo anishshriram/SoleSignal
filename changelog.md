@@ -45,6 +45,7 @@ Build the SoleSignal MVP backend and mobile app. The backend is a REST API (Node
 - [x] `DELETE /contacts/{id}` — deleteContact()
 - [x] `POST /alerts` — sendAlert() (Twilio placeholder — awaiting account)
 - [x] `GET /alerts/{id}` — getAlertStatus()
+- [x] `DELETE /sensors/me` — unpairSensor() — added post-spec (not in original PDF)
 
 ### Stage 4 — Mobile App
 - [x] React Native (bare CLI) project initialized in `mobile/`
@@ -55,8 +56,8 @@ Build the SoleSignal MVP backend and mobile app. The backend is a REST API (Node
 - [x] BLE service module (`react-native-ble-plx`)
 - [x] Register screen
 - [x] Login screen
-- [x] Home screen (sensor status + manual + auto alert trigger)
-- [x] Pairing screen (BLE scan + connect)
+- [x] Home screen (sensor status + event log + manual + auto alert trigger)
+- [x] Pairing screen (BLE scan filtered by service UUID + connect)
 - [x] Contacts screen (list, add, edit, delete)
 - [x] Alert Sent screen (confirmation)
 - [x] Onboarding flow (Register → Pair → Add Contact → Home)
@@ -64,8 +65,15 @@ Build the SoleSignal MVP backend and mobile app. The backend is a REST API (Node
 - [x] CocoaPods installed (80 pods — reanimated removed, incompatible with RN 0.84)
 - [x] BLEContext — shares connected device + sensor DB id across screens
 - [x] BLE tap pattern monitoring wired to auto-trigger alert in HomeScreen
+- [x] BLE tap detection fixed — only triggers on decoded value `"1"` (firmware protocol)
+- [x] BLE scan filtered by service UUID — only SoleSignal devices shown
+- [x] BLE disconnect listener — status dot updates immediately on drop
 - [x] GPS one-shot at alert time (3s timeout, graceful fallback)
 - [x] Node 20 required — `.xcode.env.local` hardcoded to nvm Node 20 path
+- [x] Event log on Home screen — scrolling, timestamped, color-coded (styled after ble_demo.html)
+- [x] Reconnect button on Home screen — shown when paired but not connected this session
+- [x] Unpair button on Home screen — confirmation dialog, calls DELETE /sensors/me
+- [x] Vibration on alert dispatch — `[0, 500, 200, 500]` pattern
 
 **Platform:** iOS only (bare React Native CLI, tested via Xcode on personal device)
 **Theme:** Scarlet `#CC0033` / Black `#000000` / White `#FFFFFF` (Rutgers University)
@@ -83,7 +91,32 @@ Build the SoleSignal MVP backend and mobile app. The backend is a REST API (Node
 
 ## Progress Percentage
 
-**~90%** — Backend complete with logging. Mobile app running on device. All 45 API tests passing. BLE UUIDs updated from firmware team. Twilio SMS still placeholder.
+**~92%** — Backend complete with logging. Mobile app running on device. All 45 API tests passing. BLE UUIDs confirmed from firmware team. Event log, unpair, reconnect, vibration added. Twilio SMS still placeholder.
+
+---
+
+## Session Summary (2026-03-30) — UX Improvements + Bug Fixes
+
+### Changes made
+| Change | File(s) | Notes |
+|--------|---------|-------|
+| BLE scan now filters by service UUID | `mobile/src/services/ble.ts` | Only SoleSignal devices appear in the scan list |
+| PairingScreen filters unnamed devices | `mobile/src/screens/PairingScreen.tsx` | Eliminates "Unknown device" clutter |
+| Fixed BLE tap trigger — only fires on value `"1"` | `mobile/src/services/ble.ts` | Previously any characteristic data triggered an alert |
+| Fixed alert spam — `alertInProgress` guard set immediately | `mobile/src/screens/HomeScreen.tsx` | Auto-trigger silently ignores not-ready state; only manual button shows the error |
+| Added scrolling event log to Home screen | `mobile/src/screens/HomeScreen.tsx` | Dark background, monospace, timestamped, color-coded — styled after `demov1/ble_demo.html` |
+| Added Reconnect button | `mobile/src/screens/HomeScreen.tsx` | Shown when sensor is paired in DB but not connected this session |
+| Added Unpair button with confirmation | `mobile/src/screens/HomeScreen.tsx` | Calls `DELETE /sensors/me`, clears BLE context |
+| Added vibration on alert dispatch | `mobile/src/screens/HomeScreen.tsx` | Pattern: `[0, 500, 200, 500]` |
+| Added `DELETE /sensors/me` endpoint | `backend/routes/sensors.ts` | Unpairs and deletes sensor record; alerts cascade-delete |
+| Added `unpairSensor()` API call | `mobile/src/services/api.ts` | Calls `DELETE /sensors/me` |
+| BLE disconnect listener added | `mobile/src/screens/HomeScreen.tsx` | Status dot updates immediately when device drops |
+| Added `onData` callback to `monitorTapPattern` | `mobile/src/services/ble.ts` | Raw characteristic values logged to event log |
+
+### Known remaining issues
+- XIAO firmware sends characteristic data continuously — the `"1"` filter now prevents false alerts, but the event log will show every transmission
+- Twilio SMS not wired — alerts create DB records but no SMS is sent
+- `BASE_URL` in `api.ts` hardcoded to local IP — must be updated when network changes
 
 ---
 
@@ -110,44 +143,10 @@ Build the SoleSignal MVP backend and mobile app. The backend is a REST API (Node
 | "NOT READY" alert spamming repeatedly after connecting XIAO | `dispatchAlert` returned early without setting `alertInProgress.current = true`, so every BLE characteristic notification re-triggered the alert | Set `alertInProgress` guard at the top of `dispatchAlert`; auto-trigger silently ignores not-ready state (only manual button shows the alert) |
 | BASE_URL wrong after network change | IP changed from `192.168.1.243` to `10.75.181.130` between sessions | Updated `api.ts` BASE_URL |
 
-### Known remaining issues
-- BLE characteristic fires continuously (not just on tap) — the XIAO firmware sends data constantly, meaning any data triggers `onTapPattern`. Needs firmware-side fix to only notify on confirmed tap pattern
-- Twilio SMS not wired — alerts create DB records but no SMS is sent
-
 ### Reminder for next session
 - Always start backend in a **dedicated terminal** — never type other commands in the same terminal as `npm run dev`
 - Run `lsof -i :3000` if the backend exits immediately — there may be a zombie process holding the port
 - Run `ipconfig getifaddr en0` to get current IP before testing on device — update `api.ts` if it changed
-
----
-
-## Device Testing Session (2026-03-25)
-
-### What was tested
-- Built and deployed to physical iPhone via Xcode (iOS 26.4, SDK)
-- Metro bundler running on Node 20 via nvm
-- Backend running locally, PostgreSQL on Homebrew
-
-### What worked
-- App installed and launched successfully on device
-- Register: account created, confirmed in PostgreSQL (`SELECT * FROM users`)
-- Login: JWT received and stored in iOS Keychain
-
-### Bugs found and fixed
-| Bug | Root Cause | Fix |
-|-----|-----------|-----|
-| Data not saving to PostgreSQL | Prisma client generated against old SQLite provider; `dev.db` still existed and intercepted writes | Deleted `dev.db`, ran `prisma generate` to regenerate client for PostgreSQL |
-| Contacts not appearing after save | `GET /contacts` returned flat array; mobile expected `{ contacts: [...] }` | Fixed backend to return `{ contacts }` wrapper |
-| Contacts screen always empty on fresh account | `GET /contacts` returned 404 for empty list; mobile's catch block swallowed it | Changed to return `200 { contacts: [] }` |
-| Build failed: RNReanimated hermes header | `react-native-reanimated` v3 incompatible with RN 0.84 Hermes headers | Removed reanimated entirely (not needed — using native-stack) |
-| Metro start failed: `toReversed is not a function` | Node 18 — RN 0.84 requires Node 20 | Installed Node 20 via nvm; hardcoded path in `.xcode.env.local` |
-| Backend build phase failed in Xcode | Xcode build environment doesn't load nvm; `NODE_BINARY` resolved to nothing | Created `.xcode.env.local` with absolute path to Node 20 binary |
-| Backend wrote to SQLite instead of PostgreSQL | Schema was SQLite; migration to PostgreSQL done but old client cached | Regenerated Prisma client, deleted `dev.db` |
-
-### Known remaining issues
-- BLE UUIDs updated — service: `12345678-1234-1234-1234-1234567890ab`, status char: `99999999-8888-7777-6666-555555555555`
-- Twilio not wired — alerts create DB records but no SMS is sent
-- `BASE_URL` in `api.ts` is hardcoded to local IP — must be updated when network changes
 
 ---
 
@@ -179,18 +178,63 @@ Full audit of all 24 source files performed. Issues found:
 | `GET /contacts` flat array vs `{ contacts }` wrapper | Breaking | **Fixed** |
 | `GET /contacts` returns 404 on empty list | Breaking | **Fixed** |
 | `sensor_id`/`contact_id` parsed with `parseInt` on already-numeric values | Medium | **Fixed** (use `Number()`) |
-| BLE service UUIDs are firmware placeholders | High | Open — needs hardware team input |
+| BLE service UUIDs are firmware placeholders | High | **Fixed** — UUIDs provided by firmware team |
 | Twilio SMS not implemented | High | Open — awaiting account |
 | JWT_SECRET falls back to hardcoded default if env missing | Security | Acceptable for dev; fix before production |
 
 ---
 
+## Device Testing Session (2026-03-25)
+
+### What was tested
+- Built and deployed to physical iPhone via Xcode (iOS 26.4, SDK)
+- Metro bundler running on Node 20 via nvm
+- Backend running locally, PostgreSQL on Homebrew
+
+### What worked
+- App installed and launched successfully on device
+- Register: account created, confirmed in PostgreSQL (`SELECT * FROM users`)
+- Login: JWT received and stored in iOS Keychain
+
+### Bugs found and fixed
+| Bug | Root Cause | Fix |
+|-----|-----------|-----|
+| Data not saving to PostgreSQL | Prisma client generated against old SQLite provider; `dev.db` still existed and intercepted writes | Deleted `dev.db`, ran `prisma generate` to regenerate client for PostgreSQL |
+| Contacts not appearing after save | `GET /contacts` returned flat array; mobile expected `{ contacts: [...] }` | Fixed backend to return `{ contacts }` wrapper |
+| Contacts screen always empty on fresh account | `GET /contacts` returned 404 for empty list; mobile's catch block swallowed it | Changed to return `200 { contacts: [] }` |
+| Build failed: RNReanimated hermes header | `react-native-reanimated` v3 incompatible with RN 0.84 Hermes headers | Removed reanimated entirely (not needed — using native-stack) |
+| Metro start failed: `toReversed is not a function` | Node 18 — RN 0.84 requires Node 20 | Installed Node 20 via nvm; hardcoded path in `.xcode.env.local` |
+| Backend build phase failed in Xcode | Xcode build environment doesn't load nvm; `NODE_BINARY` resolved to nothing | Created `.xcode.env.local` with absolute path to Node 20 binary |
+| Backend wrote to SQLite instead of PostgreSQL | Schema was SQLite; migration to PostgreSQL done but old client cached | Regenerated Prisma client, deleted `dev.db` |
+
+---
+
 ## Next Actions to be Implemented
 
-1. **Wire Twilio** — create account, add `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_PHONE_NUMBER` to `.env`, implement SMS in `backend/routes/alerts.ts`
-2. ~~**BLE UUIDs**~~ — updated in `mobile/src/services/ble.ts` (provided by firmware team)
-3. ~~**Stage 5**~~ — Complete. 45 Vitest + Supertest tests passing across 4 test files.
-4. **Wire Twilio** — still pending (requires account credentials)
+1. **Wire Twilio** — create account, add `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_PHONE_NUMBER` to `.env`, implement SMS with up to 3 retries in `backend/routes/alerts.ts`
+2. ~~**BLE UUIDs**~~ — complete
+3. ~~**Stage 5 testing**~~ — complete
+4. **Stage 6** — Docker + production deployment
+
+---
+
+## Master Document Update Requirements
+
+The following items were implemented during development but are **not reflected in the current Software Documentation Master PDF**. The document should be updated before final submission or handoff.
+
+| Item | What was built | What the doc says / omits |
+|------|---------------|--------------------------|
+| `DELETE /sensors/me` endpoint | Unpairs and deletes the user's sensor record | Not listed in the API endpoint table — doc only has 12 endpoints, this is the 13th |
+| `GET /sensors/me` endpoint | Returns the authenticated user's sensor without needing to know its DB id | Not listed — doc only has `GET /sensors/{id}` |
+| BLE service UUID + characteristic UUID | `12345678-1234-1234-1234-1234567890ab` / `99999999-8888-7777-6666-555555555555` (from firmware team) | Not documented anywhere in the spec |
+| BLE tap trigger protocol | Firmware sends `"1"` (ASCII, base64-encoded over BLE) to signal a confirmed tap pattern | Not specified in the doc — only says "tap pattern" without defining the signal value |
+| Sensor unpair behavior | Sensor record is deleted on unpair; associated alerts are cascade-deleted | No unpair flow described in the doc |
+| `POST /sensors/pair` response shape | Returns `{ message, sensor_id, id }` where `id` is the DB primary key used in alert requests | Doc does not specify that the DB `id` (separate from `sensor_id`) is returned and required for alerts |
+| Test framework | Vitest + Supertest (not Jest) due to TypeScript 6 peer dep conflict | Doc says Jest; switched to Vitest — functionally identical API |
+| React Native version | 0.84 (bare CLI) — `react-native-reanimated` removed, incompatible with RN 0.84 Hermes | No specific RN version pinned in the doc |
+| Node.js version requirement | Node 20 required — RN 0.84 uses `Array.toReversed()` which fails on Node 18 | Not documented |
+| JWT payload field | Uses `user_id` (not `id`) in JWT token payload | Doc describes JWT auth but does not specify the payload field name |
+| Alert `delivery_status` values | `pending`, `delivered`, `failed` | Doc mentions delivery status but does not enumerate the exact string values |
 
 ---
 
