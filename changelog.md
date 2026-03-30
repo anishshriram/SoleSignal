@@ -87,6 +87,40 @@ Build the SoleSignal MVP backend and mobile app. The backend is a REST API (Node
 
 ---
 
+## Device Testing Session (2026-03-30)
+
+### What was tested
+- Full backend restart and device test after Stage 5 testing and BLE UUID update
+- Registered new account, logged in, added contacts — all confirmed working
+- Attempted BLE scan and pairing with physical XIAO sensor
+- Attempted alert flow
+
+### What worked
+- Backend startup and all API endpoints confirmed via Morgan logs
+- Register, login, contacts (add/view) working on device
+- XIAO sensor was visible in BLE scan after filtering fix
+- Alert spam issue identified and fixed
+
+### Bugs found and fixed
+| Bug | Root Cause | Fix |
+|-----|-----------|-----|
+| Backend crashed silently on startup | Zombie node process from previous session still holding port 3000; new `npm run dev` couldn't bind and exited silently | Killed PID with `kill <pid>`, restarted backend cleanly |
+| App showing "internal server error" on register/login | Previous backend terminal had commands typed into it, killing the `npm run dev` process while leaving a zombie on port 3000 | Restarted backend in a clean terminal; never type other commands in backend terminal |
+| BLE scan flooded with "Unknown device" entries | `startDeviceScan(null, null, ...)` scans all nearby BLE peripherals | Changed to scan specifically for `SOLE_SIGNAL_SERVICE_UUID`; also added name filter in PairingScreen |
+| "NOT READY" alert spamming repeatedly after connecting XIAO | `dispatchAlert` returned early without setting `alertInProgress.current = true`, so every BLE characteristic notification re-triggered the alert | Set `alertInProgress` guard at the top of `dispatchAlert`; auto-trigger silently ignores not-ready state (only manual button shows the alert) |
+| BASE_URL wrong after network change | IP changed from `192.168.1.243` to `10.75.181.130` between sessions | Updated `api.ts` BASE_URL |
+
+### Known remaining issues
+- BLE characteristic fires continuously (not just on tap) — the XIAO firmware sends data constantly, meaning any data triggers `onTapPattern`. Needs firmware-side fix to only notify on confirmed tap pattern
+- Twilio SMS not wired — alerts create DB records but no SMS is sent
+
+### Reminder for next session
+- Always start backend in a **dedicated terminal** — never type other commands in the same terminal as `npm run dev`
+- Run `lsof -i :3000` if the backend exits immediately — there may be a zombie process holding the port
+- Run `ipconfig getifaddr en0` to get current IP before testing on device — update `api.ts` if it changed
+
+---
+
 ## Device Testing Session (2026-03-25)
 
 ### What was tested
