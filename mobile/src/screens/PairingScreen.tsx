@@ -47,6 +47,8 @@ export default function PairingScreen({ navigation }: Props) {
     setScanning(true);
 
     stopScanRef.current = bleService.startScan(device => {
+      // Only show devices that have a name — filters out anonymous peripherals
+      if (!device.name) return;
       setDevices(prev => {
         if (prev.find(d => d.id === device.id)) {
           return prev;

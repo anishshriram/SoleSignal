@@ -53,11 +53,18 @@ class BLEService {
     onDevice: (device: Device) => void,
     timeoutMs = 10000,
   ): () => void {
-    this.manager.startDeviceScan(null, null, (_error, device) => {
-      if (device) {
-        onDevice(device);
-      }
-    });
+    // Try scanning for our specific service UUID first.
+    // Falls back to scanning all devices — only named devices are passed
+    // to onDevice so the list isn't flooded with anonymous peripherals.
+    this.manager.startDeviceScan(
+      [SOLE_SIGNAL_SERVICE_UUID],
+      null,
+      (_error, device) => {
+        if (device) {
+          onDevice(device);
+        }
+      },
+    );
 
     const timer = setTimeout(() => this.stopScan(), timeoutMs);
 

@@ -1,4 +1,4 @@
-dd# SoleSignal API Test Results
+# SoleSignal API Test Results
 
 **Date:** 2026-03-30
 **Test runner:** Vitest 3.2.4 + Supertest 7.2.2

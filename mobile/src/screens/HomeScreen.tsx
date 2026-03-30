@@ -125,12 +125,15 @@ export default function HomeScreen({ navigation }: Props) {
     });
   };
 
-  const dispatchAlert = async () => {
+  const dispatchAlert = async (isManual = false) => {
+    if (alertInProgress.current) return;
     if (!resolvedSensorDbId || !contactId) {
-      Alert.alert(
-        'Not ready',
-        'Make sure your sensor is paired and you have at least one emergency contact.',
-      );
+      if (isManual) {
+        Alert.alert(
+          'Not ready',
+          'Make sure your sensor is paired and you have at least one emergency contact.',
+        );
+      }
       return;
     }
 
@@ -220,7 +223,7 @@ export default function HomeScreen({ navigation }: Props) {
 
       <View style={styles.spacer} />
 
-      <TouchableOpacity style={styles.alertButton} onPress={dispatchAlert}>
+      <TouchableOpacity style={styles.alertButton} onPress={() => dispatchAlert(true)}>
         <Text style={styles.alertButtonText}>SEND ALERT</Text>
       </TouchableOpacity>
       <Text style={styles.alertHint}>

@@ -2,7 +2,7 @@ import axios from 'axios';
 import * as Keychain from 'react-native-keychain';
 
 // Update this to your backend IP when testing on device
-const BASE_URL = 'http://localhost:3000';
+const BASE_URL = 'http://10.75.181.130:3000';
 
 const api = axios.create({
   baseURL: BASE_URL,
