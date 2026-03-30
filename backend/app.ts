@@ -1,0 +1,23 @@
+import 'dotenv/config';
+import express from 'express';
+import morgan from 'morgan';
+import usersRouter from './routes/users.js';
+import contactsRouter from './routes/contacts.js';
+import sensorsRouter from './routes/sensors.js';
+import alertsRouter from './routes/alerts.js';
+
+const app = express();
+
+app.use(morgan('dev'));
+app.use(express.json());
+
+app.use('/users', usersRouter);
+app.use('/contacts', contactsRouter);
+app.use('/sensors', sensorsRouter);
+app.use('/alerts', alertsRouter);
+
+app.get('/', (_req, res) => {
+  res.json({ message: 'SoleSignal API is running' });
+});
+
+export default app;

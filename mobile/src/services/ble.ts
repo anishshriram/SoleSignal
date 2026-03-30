@@ -1,11 +1,11 @@
 import { BleManager, Device, State } from 'react-native-ble-plx';
 import { Platform, PermissionsAndroid } from 'react-native';
 
-// SoleSignal sensor BLE service UUID — update to match firmware
-export const SOLE_SIGNAL_SERVICE_UUID = '0000180d-0000-1000-8000-00805f9b34fb';
-// Tap pattern characteristic UUID — update to match firmware
+// SoleSignal sensor BLE service UUID (from firmware team)
+export const SOLE_SIGNAL_SERVICE_UUID = '12345678-1234-1234-1234-1234567890ab';
+// Status characteristic UUID (from firmware team)
 export const TAP_PATTERN_CHARACTERISTIC_UUID =
-  '00002a37-0000-1000-8000-00805f9b34fb';
+  '99999999-8888-7777-6666-555555555555';
 
 class BLEService {
   private manager: BleManager;

@@ -72,8 +72,8 @@ Build the SoleSignal MVP backend and mobile app. The backend is a REST API (Node
 **Key deps:** `react-native-ble-plx`, `react-native-keychain`, `@react-navigation/native`, `@react-navigation/native-stack`, `axios`, `@react-native-community/geolocation`, `morgan`
 
 ### Stage 5 — Testing
-- [ ] API endpoint tests (Jest + Supertest)
-- [ ] Integration tests (end-to-end alert flow)
+- [x] API endpoint tests — Vitest + Supertest (45 tests, 4 test files, all passing)
+- [x] Integration test — end-to-end register → login → pair sensor → add contact → send alert flow covered in `alerts.test.ts`
 
 ### Stage 6 — Deployment
 - [ ] Docker setup
@@ -83,7 +83,7 @@ Build the SoleSignal MVP backend and mobile app. The backend is a REST API (Node
 
 ## Progress Percentage
 
-**~80%** — Backend complete with logging. Mobile app running on device. Register and login confirmed working. Contacts bug fixed. Twilio SMS still placeholder.
+**~90%** — Backend complete with logging. Mobile app running on device. All 45 API tests passing. BLE UUIDs updated from firmware team. Twilio SMS still placeholder.
 
 ---
 
@@ -111,9 +111,28 @@ Build the SoleSignal MVP backend and mobile app. The backend is a REST API (Node
 | Backend wrote to SQLite instead of PostgreSQL | Schema was SQLite; migration to PostgreSQL done but old client cached | Regenerated Prisma client, deleted `dev.db` |
 
 ### Known remaining issues
-- BLE UUIDs in `ble.ts` are placeholders — need to match firmware (hardware team)
+- BLE UUIDs updated — service: `12345678-1234-1234-1234-1234567890ab`, status char: `99999999-8888-7777-6666-555555555555`
 - Twilio not wired — alerts create DB records but no SMS is sent
 - `BASE_URL` in `api.ts` is hardcoded to local IP — must be updated when network changes
+
+---
+
+## Stage 5 Testing (2026-03-30)
+
+**Test runner:** Vitest + Supertest (switched from Jest due to TypeScript 6 peer dep conflict with ts-jest)
+
+**Architecture change:** Extracted Express app into `backend/app.ts` so tests can import the app without starting the server. `backend/server.ts` now just calls `app.listen()`.
+
+### Test results — 45 tests, 4 files, all passing
+
+| File | Tests | Coverage |
+|------|-------|----------|
+| `tests/users.test.ts` | 14 | register (success, duplicate, missing fields, short password), login (success, wrong password, wrong email, missing fields), update profile (success, forbidden, no auth, no fields), logout (success, no auth) |
+| `tests/contacts.test.ts` | 11 | empty list, add (success, missing name, bad phone, no auth), get populated list, update (success, no fields, 404), delete (success, already deleted) |
+| `tests/sensors.test.ts` | 9 | pair (success, missing sensor_id, already claimed by other user, no auth), GET /sensors/me before and after pair, GET /sensors/:id (success, wrong user, bad ID) |
+| `tests/alerts.test.ts` | 11 | send alert (with/without GPS, missing coords when location_available true, wrong sensor/contact ownership, missing fields, no auth), get alert status (success, wrong user, bad ID, not found) |
+
+**Run command:** `npm test` from `backend/`
 
 ---
 
@@ -135,8 +154,9 @@ Full audit of all 24 source files performed. Issues found:
 ## Next Actions to be Implemented
 
 1. **Wire Twilio** — create account, add `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_PHONE_NUMBER` to `.env`, implement SMS in `backend/routes/alerts.ts`
-2. **BLE UUIDs** — get correct service + characteristic UUIDs from firmware team (Om Patel), update `mobile/src/services/ble.ts`
-3. **Stage 5** — Jest + Supertest API tests and end-to-end alert flow test
+2. ~~**BLE UUIDs**~~ — updated in `mobile/src/services/ble.ts` (provided by firmware team)
+3. ~~**Stage 5**~~ — Complete. 45 Vitest + Supertest tests passing across 4 test files.
+4. **Wire Twilio** — still pending (requires account credentials)
 
 ---
 
