@@ -1,4 +1,7 @@
 import { BleManager, Device, State } from 'react-native-ble-plx';
+
+// atob is available in React Native (Hermes) but not in TypeScript's lib by default
+declare function atob(encodedData: string): string;
 import { Platform, PermissionsAndroid } from 'react-native';
 
 // SoleSignal sensor BLE service UUID (from firmware team)
@@ -95,15 +98,15 @@ class BLEService {
   }
 
   /**
-   * Monitor the tap pattern characteristic. Calls onTapPattern when data
-   * arrives. Returns an unsubscribe function.
-   *
-   * The firmware is expected to write a non-zero byte when a valid
-   * tap pattern is confirmed.
+   * Monitor the tap pattern characteristic.
+   * Calls onTapPattern only when the firmware sends the value "1".
+   * Calls onData on every notification (for the event log).
+   * Returns an unsubscribe function.
    */
   monitorTapPattern(
     device: Device,
     onTapPattern: () => void,
+    onData?: (value: string) => void,
   ): () => void {
     const sub = device.monitorCharacteristicForService(
       SOLE_SIGNAL_SERVICE_UUID,
@@ -113,7 +116,12 @@ class BLEService {
           return;
         }
         if (characteristic?.value) {
-          onTapPattern();
+          // Characteristic values are base64-encoded in react-native-ble-plx
+          const decoded = atob(characteristic.value).trim();
+          onData?.(decoded);
+          if (decoded === '1') {
+            onTapPattern();
+          }
         }
       },
     );

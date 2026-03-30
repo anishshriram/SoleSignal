@@ -1,9 +1,11 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Alert,
+  FlatList,
   StyleSheet,
   Text,
   TouchableOpacity,
+  Vibration,
   View,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
@@ -11,7 +13,13 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import Geolocation from '@react-native-community/geolocation';
 import { useAuth } from '../context/AuthContext';
 import { useBLE } from '../context/BLEContext';
-import { sendAlert, getContacts, getMySensor, logoutUser } from '../services/api';
+import {
+  sendAlert,
+  getContacts,
+  getMySensor,
+  logoutUser,
+  unpairSensor,
+} from '../services/api';
 import { bleService } from '../services/ble';
 import { Colors, Spacing, Typography } from '../theme';
 import { RootStackParamList } from '../../App';
@@ -20,6 +28,11 @@ type Props = {
   navigation: NativeStackNavigationProp<RootStackParamList, 'Home'>;
 };
 
+type LogLevel = 'info' | 'ok' | 'warn' | 'error';
+type LogEntry = { id: number; ts: string; msg: string; level: LogLevel };
+
+let logCounter = 0;
+
 export default function HomeScreen({ navigation }: Props) {
   const { clearAuth } = useAuth();
   const { connectedDevice, sensorDbId, clearBLEState, unmonitorRef } = useBLE();
@@ -27,12 +40,20 @@ export default function HomeScreen({ navigation }: Props) {
   const [sensorPaired, setSensorPaired] = useState(false);
   const [bleConnected, setBleConnected] = useState(false);
   const [contactId, setContactId] = useState<number | null>(null);
-  // Resolved sensor DB id: prefer context (set during this session's pairing),
-  // fall back to what we fetch from the server on mount.
   const [resolvedSensorDbId, setResolvedSensorDbId] = useState<number | null>(null);
+  const [logs, setLogs] = useState<LogEntry[]>([]);
   const alertInProgress = useRef(false);
+  const logListRef = useRef<FlatList>(null);
 
-  // Reload contacts and sensor status whenever screen comes into focus
+  const addLog = useCallback((msg: string, level: LogLevel = 'info') => {
+    const ts = new Date().toLocaleTimeString('en-US', { hour12: false });
+    setLogs(prev => [
+      ...prev.slice(-99), // keep last 100 entries
+      { id: logCounter++, ts, msg, level },
+    ]);
+    setTimeout(() => logListRef.current?.scrollToEnd({ animated: true }), 50);
+  }, []);
+
   useFocusEffect(
     useCallback(() => {
       loadStatus();
@@ -42,13 +63,16 @@ export default function HomeScreen({ navigation }: Props) {
   // Wire up BLE tap monitoring whenever we have a connected device
   useEffect(() => {
     if (!connectedDevice) {
-      setBleConnected(false);
+      if (bleConnected) {
+        setBleConnected(false);
+        addLog('Sensor disconnected', 'warn');
+      }
       return;
     }
 
     setBleConnected(true);
+    addLog(`Sensor connected: ${connectedDevice.name || connectedDevice.id}`, 'ok');
 
-    // Clean up any existing monitor before starting a new one
     if (unmonitorRef.current) {
       unmonitorRef.current();
     }
@@ -56,20 +80,31 @@ export default function HomeScreen({ navigation }: Props) {
     unmonitorRef.current = bleService.monitorTapPattern(
       connectedDevice,
       () => {
-        // Guard against double-firing
         if (!alertInProgress.current) {
+          addLog('Tap pattern detected — triggering alert', 'warn');
           handleAutoAlert();
         }
       },
+      (value) => {
+        addLog(`BLE data received: "${value}"`, 'info');
+      },
     );
+
+    // Listen for disconnection
+    const disconnectSub = connectedDevice.onDisconnected(() => {
+      clearBLEState();
+      setBleConnected(false);
+      addLog('Sensor disconnected unexpectedly', 'warn');
+    });
 
     return () => {
       if (unmonitorRef.current) {
         unmonitorRef.current();
         unmonitorRef.current = null;
       }
+      disconnectSub.remove();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [connectedDevice]);
 
   const loadStatus = async () => {
@@ -78,13 +113,13 @@ export default function HomeScreen({ navigation }: Props) {
       const contacts = contactsRes.data?.contacts || [];
       if (contacts.length > 0) {
         setContactId(contacts[0].id);
+      } else {
+        setContactId(null);
       }
     } catch {
       // No contacts yet
     }
 
-    // Use sensor DB id from BLE context if available (set during pairing this session).
-    // Otherwise, fetch it from /sensors/me so the app works after a restart.
     if (sensorDbId) {
       setResolvedSensorDbId(sensorDbId);
       setSensorPaired(true);
@@ -94,17 +129,17 @@ export default function HomeScreen({ navigation }: Props) {
         if (res.data?.is_paired) {
           setSensorPaired(true);
           setResolvedSensorDbId(res.data.id);
+        } else {
+          setSensorPaired(false);
+          setResolvedSensorDbId(null);
         }
       } catch {
-        // No sensor paired yet
+        setSensorPaired(false);
+        setResolvedSensorDbId(null);
       }
     }
   };
 
-  /**
-   * Get a one-shot GPS fix (max 3 s), then fire the alert.
-   * Falls back to location_available=false if GPS is unavailable or times out.
-   */
   const getLocationAndAlert = (): Promise<{
     gps_latitude?: number;
     gps_longitude?: number;
@@ -138,33 +173,74 @@ export default function HomeScreen({ navigation }: Props) {
     }
 
     alertInProgress.current = true;
+    addLog('Fetching GPS location…', 'info');
+
     try {
       const locationPayload = await getLocationAndAlert();
+      if (locationPayload.location_available) {
+        addLog(
+          `GPS: ${locationPayload.gps_latitude?.toFixed(5)}, ${locationPayload.gps_longitude?.toFixed(5)}`,
+          'ok',
+        );
+      } else {
+        addLog('GPS unavailable — sending without location', 'warn');
+      }
+
+      addLog('Sending alert…', 'info');
+
+      // Vibrate on alert: long buzz, pause, long buzz
+      Vibration.vibrate([0, 500, 200, 500]);
+
       const res = await sendAlert({
         sensor_id: resolvedSensorDbId,
         contact_id: contactId,
         ...locationPayload,
       });
+
+      addLog('Alert sent successfully', 'ok');
       const alertId = res.data?.alert_id;
       navigation.navigate('AlertSent', { alertId });
     } catch (err: any) {
       const msg =
         err?.response?.data?.error || 'Failed to send alert. Try again.';
+      addLog(`Alert failed: ${msg}`, 'error');
       Alert.alert('Error', msg);
     } finally {
       alertInProgress.current = false;
     }
   };
 
-  // Called automatically when the sensor tap pattern is detected over BLE
   const handleAutoAlert = () => {
-    Alert.alert(
-      'Tap pattern detected',
-      'Sending emergency alert…',
-      [{ text: 'OK' }],
-      { cancelable: false },
-    );
+    Alert.alert('Tap pattern detected', 'Sending emergency alert…', [{ text: 'OK' }], {
+      cancelable: false,
+    });
     dispatchAlert();
+  };
+
+  const handleUnpair = () => {
+    Alert.alert(
+      'Unpair sensor',
+      'This will remove your sensor from your account. You can pair again later.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Unpair',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await unpairSensor();
+              clearBLEState();
+              setSensorPaired(false);
+              setResolvedSensorDbId(null);
+              setBleConnected(false);
+              addLog('Sensor unpaired', 'warn');
+            } catch (err: any) {
+              Alert.alert('Error', err?.response?.data?.error || 'Failed to unpair sensor.');
+            }
+          },
+        },
+      ],
+    );
   };
 
   const handleLogout = async () => {
@@ -180,11 +256,25 @@ export default function HomeScreen({ navigation }: Props) {
   const bleStatusText = () => {
     if (!sensorPaired) return 'No sensor paired';
     if (bleConnected) return 'Paired & connected';
-    return 'Paired — sensor not in range';
+    return 'Paired — not connected';
+  };
+
+  const dotStyle = bleConnected
+    ? styles.dotGreen
+    : sensorPaired
+    ? styles.dotYellow
+    : styles.dotRed;
+
+  const logColor: Record<LogLevel, string> = {
+    info: '#9ca3af',
+    ok: '#22c55e',
+    warn: '#eab308',
+    error: '#ef4444',
   };
 
   return (
     <View style={styles.container}>
+      {/* Header */}
       <View style={styles.header}>
         <Text style={styles.title}>SoleSignal</Text>
         <TouchableOpacity onPress={handleLogout}>
@@ -192,38 +282,70 @@ export default function HomeScreen({ navigation }: Props) {
         </TouchableOpacity>
       </View>
 
+      {/* Status card */}
       <View style={styles.statusCard}>
-        <Text style={styles.statusLabel}>Sensor status</Text>
-        <View
-          style={[
-            styles.statusDot,
-            bleConnected
-              ? styles.dotGreen
-              : sensorPaired
-              ? styles.dotYellow
-              : styles.dotRed,
-          ]}
-        />
-        <Text style={styles.statusValue}>{bleStatusText()}</Text>
+        <View style={styles.statusRow}>
+          <View style={[styles.statusDot, dotStyle]} />
+          <Text style={styles.statusValue}>{bleStatusText()}</Text>
+        </View>
+
+        <View style={styles.statusActions}>
+          {!sensorPaired && (
+            <TouchableOpacity
+              style={styles.actionButton}
+              onPress={() => navigation.navigate('Pairing')}>
+              <Text style={styles.actionButtonText}>Pair sensor</Text>
+            </TouchableOpacity>
+          )}
+          {sensorPaired && !bleConnected && (
+            <TouchableOpacity
+              style={styles.actionButton}
+              onPress={() => navigation.navigate('Pairing')}>
+              <Text style={styles.actionButtonText}>Reconnect</Text>
+            </TouchableOpacity>
+          )}
+          {sensorPaired && (
+            <TouchableOpacity
+              style={[styles.actionButton, styles.actionButtonDestructive]}
+              onPress={handleUnpair}>
+              <Text style={styles.actionButtonDestructiveText}>Unpair</Text>
+            </TouchableOpacity>
+          )}
+          <TouchableOpacity
+            style={styles.actionButton}
+            onPress={() => navigation.navigate('Contacts')}>
+            <Text style={styles.actionButtonText}>Contacts</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
-      {!sensorPaired && (
-        <TouchableOpacity
-          style={styles.secondaryButton}
-          onPress={() => navigation.navigate('Pairing')}>
-          <Text style={styles.secondaryButtonText}>Pair sensor</Text>
-        </TouchableOpacity>
-      )}
+      {/* Event log */}
+      <View style={styles.logCard}>
+        <Text style={styles.logTitle}>EVENT LOG</Text>
+        <FlatList
+          ref={logListRef}
+          data={logs}
+          keyExtractor={item => String(item.id)}
+          renderItem={({ item }) => (
+            <Text style={[styles.logEntry, { color: logColor[item.level as LogLevel] }]}>
+              <Text style={styles.logTs}>{item.ts} </Text>
+              {item.msg}
+            </Text>
+          )}
+          ListEmptyComponent={
+            <Text style={styles.logEmpty}>Waiting for events…</Text>
+          }
+          style={styles.logList}
+          onContentSizeChange={() =>
+            logListRef.current?.scrollToEnd({ animated: true })
+          }
+        />
+      </View>
 
+      {/* Alert button */}
       <TouchableOpacity
-        style={styles.secondaryButton}
-        onPress={() => navigation.navigate('Contacts')}>
-        <Text style={styles.secondaryButtonText}>Manage contacts</Text>
-      </TouchableOpacity>
-
-      <View style={styles.spacer} />
-
-      <TouchableOpacity style={styles.alertButton} onPress={() => dispatchAlert(true)}>
+        style={styles.alertButton}
+        onPress={() => dispatchAlert(true)}>
         <Text style={styles.alertButtonText}>SEND ALERT</Text>
       </TouchableOpacity>
       <Text style={styles.alertHint}>
@@ -243,7 +365,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: Spacing.xl,
+    marginBottom: Spacing.md,
   },
   title: {
     ...Typography.heading,
@@ -254,44 +376,89 @@ const styles = StyleSheet.create({
     color: Colors.midGray,
     fontSize: 14,
   },
+
+  // Status card
   statusCard: {
     backgroundColor: Colors.lightGray,
     borderRadius: 12,
-    padding: Spacing.lg,
+    padding: Spacing.md,
     marginBottom: Spacing.md,
-    alignItems: 'center',
   },
-  statusLabel: {
-    ...Typography.label,
+  statusRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
     marginBottom: Spacing.sm,
   },
   statusDot: {
-    width: 16,
-    height: 16,
-    borderRadius: 8,
-    marginBottom: Spacing.sm,
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    marginRight: Spacing.sm,
   },
-  dotGreen: { backgroundColor: Colors.successGreen },
-  dotYellow: { backgroundColor: '#F9A825' },
-  dotRed: { backgroundColor: Colors.errorRed },
+  dotGreen: { backgroundColor: '#22c55e' },
+  dotYellow: { backgroundColor: '#eab308' },
+  dotRed: { backgroundColor: '#ef4444' },
   statusValue: {
     ...Typography.subheading,
-    fontSize: 16,
+    fontSize: 15,
   },
-  secondaryButton: {
+  statusActions: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  actionButton: {
     borderWidth: 1,
     borderColor: Colors.scarlet,
-    borderRadius: 8,
-    padding: Spacing.md,
-    alignItems: 'center',
-    marginBottom: Spacing.md,
+    borderRadius: 6,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
   },
-  secondaryButtonText: {
+  actionButtonText: {
     color: Colors.scarlet,
-    fontSize: 16,
+    fontSize: 13,
     fontWeight: '600',
   },
-  spacer: { flex: 1 },
+  actionButtonDestructive: {
+    borderColor: '#ef4444',
+  },
+  actionButtonDestructiveText: {
+    color: '#ef4444',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+
+  // Event log
+  logCard: {
+    flex: 1,
+    backgroundColor: '#0d0d0d',
+    borderRadius: 12,
+    padding: Spacing.md,
+    marginBottom: Spacing.md,
+  },
+  logTitle: {
+    fontSize: 10,
+    letterSpacing: 2,
+    color: '#4b5563',
+    marginBottom: Spacing.sm,
+    fontWeight: '600',
+  },
+  logList: { flex: 1 },
+  logEntry: {
+    fontFamily: 'Menlo',
+    fontSize: 11,
+    lineHeight: 18,
+  },
+  logTs: {
+    color: '#374151',
+  },
+  logEmpty: {
+    color: '#374151',
+    fontFamily: 'Menlo',
+    fontSize: 11,
+  },
+
+  // Alert button
   alertButton: {
     backgroundColor: Colors.scarlet,
     borderRadius: 12,
@@ -309,6 +476,6 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     color: Colors.midGray,
     fontSize: 12,
-    marginBottom: Spacing.lg,
+    marginBottom: Spacing.sm,
   },
 });

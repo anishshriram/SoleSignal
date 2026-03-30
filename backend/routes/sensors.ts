@@ -61,6 +61,31 @@ router.post('/pair', authenticateToken, async (req, res) => {
 });
 
 /**
+ * DELETE /sensors/me
+ * Protected. Unpairs and removes the authenticated user's sensor.
+ * Deletes the sensor record; alerts cascade-delete via foreign key.
+ * Returns: { message }
+ */
+router.delete('/me', authenticateToken, async (req, res) => {
+  try {
+    const sensor = await prisma.sensor.findUnique({
+      where: { user_id: req.user!.user_id },
+    });
+
+    if (!sensor) {
+      return res.status(404).json({ error: 'No sensor paired to this account' });
+    }
+
+    await prisma.sensor.delete({ where: { id: sensor.id } });
+
+    res.status(200).json({ message: 'Sensor unpaired successfully' });
+  } catch (error) {
+    console.error('Unpair sensor error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/**
  * GET /sensors/me
  * Protected. Returns the authenticated user's sensor.
  * Returns: { id, sensor_id, is_paired, is_calibrating, last_connected }

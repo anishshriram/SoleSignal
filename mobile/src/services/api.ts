@@ -45,6 +45,8 @@ export const getMySensor = () => api.get('/sensors/me');
 
 export const getSensorStatus = (id: number) => api.get(`/sensors/${id}`);
 
+export const unpairSensor = () => api.delete('/sensors/me');
+
 // Contacts
 export const getContacts = () => api.get('/contacts');
 
