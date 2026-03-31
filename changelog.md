@@ -89,9 +89,104 @@ Build the SoleSignal MVP backend and mobile app. The backend is a REST API (Node
 
 ---
 
+## Session Startup & Shutdown Instructions
+
+### Before every test session
+
+**Step 1 — Check your Mac's IP** (do this first — it changes between sessions on campus networks)
+```bash
+ipconfig getifaddr en0
+```
+Compare to `BASE_URL` in `mobile/src/services/api.ts`. If different, update it before building.
+
+**Step 2 — Start PostgreSQL**
+```bash
+brew services start postgresql@14
+```
+
+**Step 3 — Start backend** (dedicated terminal — never type anything else here)
+```bash
+cd /Users/anishshriram/Desktop/SoleSignal/SoleSignal/backend
+npm run dev
+```
+Should stay running indefinitely showing `Server running on port 3000`. If it exits immediately:
+```bash
+lsof -i :3000        # find zombie process
+kill <PID>           # kill it
+npm run dev          # restart
+```
+
+**Step 4 — Start Metro** (separate terminal)
+```bash
+cd /Users/anishshriram/Desktop/SoleSignal/SoleSignal/mobile
+nvm use 20
+npx react-native start
+```
+
+**Step 5 — Build in Xcode**
+- Open `mobile/ios/SoleSignalMobile.xcworkspace` (the `.xcworkspace`, not `.xcodeproj`)
+- Plug in iPhone
+- Press **Cmd+R**
+
+**Step 6 — Configure Metro on device** (first time per install only)
+If app shows "Connect to Metro to develop JavaScript":
+- Shake phone → **Settings** → **Custom bundler address**
+- IP from Step 1, port `8081`, entrypoint `index.js`
+- Go back → **Reload**
+
+### Shutdown order
+1. `Ctrl+C` in Metro terminal
+2. `Ctrl+C` in backend terminal
+3. `brew services stop postgresql@14` (optional — safe to leave running)
+4. Close Xcode
+
+### Useful debug commands
+```bash
+# Verify DB contents
+psql -d solesignal -c "SELECT * FROM users;"
+psql -d solesignal -c "SELECT * FROM sensors;"
+psql -d solesignal -c "SELECT * FROM alerts;"
+
+# Check if something is holding port 3000
+lsof -i :3000
+
+# Test backend health from Mac
+curl http://localhost:3000/
+
+# Test backend reachable from phone (run from Mac, open result URL on iPhone)
+echo "http://$(ipconfig getifaddr en0):3000/"
+```
+
+---
+
 ## Progress Percentage
 
 **~92%** — Backend complete with logging. Mobile app running on device. All 45 API tests passing. BLE UUIDs confirmed from firmware team. Event log, unpair, reconnect, vibration added. Twilio SMS still placeholder.
+
+---
+
+## Device Testing Session (2026-03-30) — Full End-to-End Confirmed Working
+
+### Confirmed working on physical iPhone (screenshots taken)
+
+| Screen / Feature | Status | Notes |
+|-----------------|--------|-------|
+| Pairing screen — BLE scan | ✅ | XIAO_THRESHOLD discovered, device ID shown (`B70FA814-...`) |
+| Pairing screen — connect | ✅ | Successfully connected to XIAO_THRESHOLD |
+| Home screen — status dot green | ✅ | Shows "Paired & connected" with green dot after pairing |
+| Home screen — status dot yellow | ✅ | Shows "Paired — sensor not in range" when not connected this session |
+| Home screen — event log | ✅ | Streams timestamped BLE data in real time; green/yellow/gray color coding |
+| BLE data streaming | ✅ | Characteristic sending `"0"` continuously (~2x per second) |
+| Tap pattern detection | ✅ | Firmware sends `"1"` on tap → event log shows yellow "Tap pattern detected — triggering alert" → alert popup fires |
+| Alert dispatch (auto) | ✅ | Triggered by `"1"` from XIAO, navigated to Alert Sent screen |
+| Alert Sent screen | ✅ | Shows "Alert sent", checkmark, alert ID (e.g. Alert #3) |
+| Contacts screen | ✅ | Shows contact name + phone, Edit/Delete buttons, confirmation dialog on delete |
+| Unpair dialog | ✅ | Confirmation dialog shown, destructive red Unpair button |
+| Manual SEND ALERT button | ✅ | Sends alert record to backend when sensor + contact are set |
+
+### What is still pending
+- Twilio SMS — alert record is created in DB but no SMS is physically sent yet
+- Auto-reconnect — after app reload, sensor shows yellow (not connected) until user manually reconnects via Pairing screen
 
 ---
 
