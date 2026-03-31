@@ -1,23 +1,46 @@
-// Alert routes: sendAlert (placeholder), getAlertStatus
+// Alert routes: sendAlert, getAlertStatus
 import express from 'express';
+import twilio from 'twilio';
 import { PrismaClient } from '@prisma/client';
 import { authenticateToken } from '../middleware/auth.js';
 
 const router = express.Router();
 const prisma = new PrismaClient();
 
+const MAX_RETRIES = 3;
+
+/**
+ * Attempt to send an SMS via Twilio, retrying up to MAX_RETRIES times.
+ * Returns true on success, throws on final failure.
+ */
+async function sendSMS(to: string, body: string): Promise<void> {
+  const client = twilio(
+    process.env.TWILIO_ACCOUNT_SID,
+    process.env.TWILIO_AUTH_TOKEN,
+  );
+
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      await client.messages.create({
+        body,
+        from: process.env.TWILIO_PHONE_NUMBER,
+        to,
+      });
+      return; // success
+    } catch (err) {
+      lastError = err;
+      console.error(`Twilio attempt ${attempt}/${MAX_RETRIES} failed:`, err);
+    }
+  }
+  throw lastError;
+}
+
 /**
  * POST /alerts
- * Protected. Assembles and sends an emergency alert via Twilio SMS.
+ * Protected. Sends an emergency alert SMS via Twilio and records it in the DB.
  * Body: { sensor_id, contact_id, gps_latitude?, gps_longitude?, location_available }
  * Returns: { message, alert_id, delivery_status }
- *
- * TODO: Twilio integration not yet configured.
- * When a Twilio account is available:
- *   1. npm install twilio
- *   2. Add TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_PHONE_NUMBER to .env
- *   3. Replace the placeholder block below with actual Twilio SMS delivery
- *   4. Implement retry logic (up to 3 attempts per NFR-5)
  */
 router.post('/', authenticateToken, async (req, res) => {
   try {
@@ -47,6 +70,9 @@ router.post('/', authenticateToken, async (req, res) => {
       return res.status(404).json({ error: 'Emergency contact not found' });
     }
 
+    // Fetch user's name for the SMS body
+    const user = await prisma.user.findUnique({ where: { id: user_id } });
+
     // Create the alert record with pending status
     const alert = await prisma.alert.create({
       data: {
@@ -57,41 +83,44 @@ router.post('/', authenticateToken, async (req, res) => {
         gps_longitude: location_available ? parseFloat(gps_longitude) : null,
         location_available: Boolean(location_available),
         delivery_status: 'pending',
-        retry_count: 0
-      }
+        retry_count: 0,
+      },
     });
 
-    // ── TWILIO PLACEHOLDER ──────────────────────────────────────────────────────
-    // Twilio SMS delivery is not yet configured.
-    // Once a Twilio account is set up, replace this block with:
-    //
-    //   const user = await prisma.user.findUnique({ where: { id: user_id } });
-    //   const locationText = location_available
-    //     ? `GPS: ${gps_latitude}, ${gps_longitude}`
-    //     : 'Location unavailable';
-    //   const message = `EMERGENCY ALERT from ${user.name}. ${locationText}. Sensor: ${sensor.sensor_id}. Time: ${new Date().toISOString()}`;
-    //
-    //   const twilioClient = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
-    //   await twilioClient.messages.create({
-    //     body: message,
-    //     from: process.env.TWILIO_PHONE_NUMBER,
-    //     to: contact.phone_number
-    //   });
-    //
-    // Then update delivery_status to 'delivered' and handle retries on failure.
-    // ───────────────────────────────────────────────────────────────────────────
+    // Build SMS message
+    const locationText = location_available
+      ? `GPS: ${parseFloat(gps_latitude).toFixed(5)}, ${parseFloat(gps_longitude).toFixed(5)}`
+      : 'Location unavailable';
+    const smsBody = `EMERGENCY ALERT from ${user!.name}. ${locationText}. Sensor: ${sensor.sensor_id}. Time: ${new Date().toISOString()}`;
 
-    // Update status to reflect Twilio is not configured
-    await prisma.alert.update({
-      where: { id: alert.id },
-      data: { delivery_status: 'pending' }
-    });
+    // Send SMS with retry logic (up to 3 attempts per NFR-5)
+    try {
+      await sendSMS(contact.phone_number, smsBody);
 
-    res.status(201).json({
-      message: 'Alert record created. SMS delivery pending — Twilio not yet configured.',
-      alert_id: alert.id,
-      delivery_status: 'pending'
-    });
+      await prisma.alert.update({
+        where: { id: alert.id },
+        data: { delivery_status: 'delivered', retry_count: MAX_RETRIES - MAX_RETRIES },
+      });
+
+      return res.status(201).json({
+        message: 'Alert sent successfully',
+        alert_id: alert.id,
+        delivery_status: 'delivered',
+      });
+    } catch (smsError) {
+      console.error('SMS delivery failed after all retries:', smsError);
+
+      await prisma.alert.update({
+        where: { id: alert.id },
+        data: { delivery_status: 'failed', retry_count: MAX_RETRIES },
+      });
+
+      return res.status(201).json({
+        message: 'Alert record created but SMS delivery failed',
+        alert_id: alert.id,
+        delivery_status: 'failed',
+      });
+    }
   } catch (error) {
     console.error('Send alert error:', error);
     res.status(500).json({ error: 'Internal server error' });
@@ -101,7 +130,6 @@ router.post('/', authenticateToken, async (req, res) => {
 /**
  * GET /alerts/:id
  * Protected. Returns the delivery status of an alert by its DB id.
- * The alert must belong to the authenticated user.
  * Returns: { alert_id, delivery_status, retry_count, timestamp }
  */
 router.get('/:id', authenticateToken, async (req, res) => {
@@ -113,7 +141,6 @@ router.get('/:id', authenticateToken, async (req, res) => {
 
     const alert = await prisma.alert.findUnique({ where: { id: alertId } });
 
-    // Verify alert exists and belongs to the authenticated user
     if (!alert || alert.user_id !== req.user!.user_id) {
       return res.status(404).json({ error: 'Alert not found' });
     }
@@ -122,7 +149,7 @@ router.get('/:id', authenticateToken, async (req, res) => {
       alert_id: alert.id,
       delivery_status: alert.delivery_status,
       retry_count: alert.retry_count,
-      timestamp: alert.timestamp
+      timestamp: alert.timestamp,
     });
   } catch (error) {
     console.error('Get alert status error:', error);

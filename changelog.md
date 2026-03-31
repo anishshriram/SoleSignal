@@ -43,7 +43,7 @@ Build the SoleSignal MVP backend and mobile app. The backend is a REST API (Node
 - [x] `GET /contacts` — getContacts() — returns `{ contacts: [...] }`
 - [x] `PATCH /contacts/{id}` — updateContact()
 - [x] `DELETE /contacts/{id}` — deleteContact()
-- [x] `POST /alerts` — sendAlert() (Twilio placeholder — awaiting account)
+- [x] `POST /alerts` — sendAlert() — Twilio SMS with up to 3 retries (NFR-5); delivery_status set to `delivered` or `failed`
 - [x] `GET /alerts/{id}` — getAlertStatus()
 - [x] `DELETE /sensors/me` — unpairSensor() — added post-spec (not in original PDF)
 
@@ -161,7 +161,7 @@ echo "http://$(ipconfig getifaddr en0):3000/"
 
 ## Progress Percentage
 
-**~92%** — Backend complete with logging. Mobile app running on device. All 45 API tests passing. BLE UUIDs confirmed from firmware team. Event log, unpair, reconnect, vibration added. Twilio SMS still placeholder.
+**~97%** — Backend complete with Twilio SMS wired. Mobile app fully functional on device. All 45 API tests passing. BLE tap detection confirmed working end-to-end. Only remaining item: Docker/deployment (Stage 6).
 
 ---
 
@@ -306,7 +306,7 @@ Full audit of all 24 source files performed. Issues found:
 
 ## Next Actions to be Implemented
 
-1. **Wire Twilio** — create account, add `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_PHONE_NUMBER` to `.env`, implement SMS with up to 3 retries in `backend/routes/alerts.ts`
+1. ~~**Wire Twilio**~~ — complete. SMS sends on every alert with up to 3 retries. `delivery_status` set to `delivered` or `failed`.
 2. ~~**BLE UUIDs**~~ — complete
 3. ~~**Stage 5 testing**~~ — complete
 4. **Stage 6** — Docker + production deployment
