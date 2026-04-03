@@ -313,6 +313,35 @@ Full audit of all 24 source files performed. Issues found:
 
 ---
 
+## Session Summary (2026-04-03) — ER Diagram + Excalidraw Skill Setup
+
+### What was done
+- Installed the `excalidraw-diagram` skill from `coleam00/excalidraw-diagram-skill` into `~/.claude/skills/excalidraw-diagram/`
+- Installed `uv` (Python package manager) and set up the Playwright-based PNG renderer
+- Generated `documentation/SoleSignal_ER_Diagram.excalidraw` — a full ER diagram based entirely on the domain model in the Software Documentation PDF (pages 17–20)
+- Rendered to `documentation/SoleSignal_ER_Diagram.png`
+
+### ER Diagram contents
+| Entity | Fields | Notes |
+|--------|--------|-------|
+| `users` | id, name, email, phone_number, password_hash, is_verified, last_login, created_at | Direct from PDF domain model |
+| `sensors` | id, sensor_id, user_id (FK), is_paired, is_calibrating, last_connected, created_at | Direct from PDF |
+| `emergency_contacts` | id, user_id (FK), name, phone_number, is_valid, created_at | Direct from PDF |
+| `alerts` | id, user_id (FK), sensor_id (FK), contact_id (FK), gps_latitude, gps_longitude, loc_available, timestamp, delivery_status, retry_count | Direct from PDF |
+
+Relationships shown: users→sensors (1:1), users→emergency_contacts (1:M), users→alerts (1:M), sensors→alerts (1:M), emergency_contacts→alerts (1:M).
+
+Styling: SoleSignal scarlet `#CC0033` for all headers, borders, and relationship lines — matches `mobile/src/theme.ts`.
+
+### How to re-render after edits
+After editing `SoleSignal_ER_Diagram.excalidraw` in excalidraw.com, run:
+```bash
+source ~/.local/bin/env && cd ~/.claude/skills/excalidraw-diagram/references && uv run python render_excalidraw.py ~/Desktop/SoleSignal/SoleSignal/documentation/SoleSignal_ER_Diagram.excalidraw
+```
+This overwrites `SoleSignal_ER_Diagram.png` in place.
+
+---
+
 ## Master Document Update Requirements
 
 The following items were implemented during development but are **not reflected in the current Software Documentation Master PDF**. The document should be updated before final submission or handoff.
