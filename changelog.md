@@ -72,6 +72,7 @@ Build the SoleSignal MVP backend and mobile app. The backend is a REST API (Node
 - [x] Node 20 required — `.xcode.env.local` hardcoded to nvm Node 20 path
 - [x] Event log on Home screen — scrolling, timestamped, color-coded (styled after ble_demo.html)
 - [x] Reconnect button on Home screen — shown when paired but not connected this session
+- [x] Auto-reconnect on app load — silently attempts BLE reconnect on startup if sensor is paired in DB
 - [x] Unpair button on Home screen — confirmation dialog, calls DELETE /sensors/me
 - [x] Vibration on alert dispatch — `[0, 500, 200, 500]` pattern
 
@@ -342,11 +343,13 @@ This overwrites `SoleSignal_ER_Diagram.png` in place.
 
 ---
 
-## Session Summary (2026-04-04) — Docker Deployment + ER Diagram Crow's Foot Fix
+## Session Summary (2026-04-04) — Auto-Reconnect + Reanimated Cleanup + Docker + Crow's Foot Fix
 
 ### What was done
 | Change | File(s) | Notes |
 |--------|---------|-------|
+| Added auto-reconnect on app load | `mobile/src/screens/HomeScreen.tsx` | On startup, if sensor is paired in DB but BLE not connected, silently attempts `bleService.connect(sensor_id)` with 5s timeout; uses `reconnectAttempted` ref to only try once per session; logs outcome to event log |
+| Removed `react-native-reanimated` | `mobile/package.json`, `mobile/babel.config.js` | Incompatible with RN 0.84 Hermes — was already removed from device build but never committed; cleaned up package-lock.json, Podfile.lock, project.pbxproj |
 | Fixed ER diagram crow's foot notation | `documentation/SoleSignal_ER_Diagram.excalidraw`, `.png` | Replaced incorrect single ticks with proper `\|\|` (one and only one) on all one-ends; replaced broken fan with proper `\|<` (tick + outward crow's foot) on all many-ends |
 | Changed "one-to-one" label to "1:1" | `documentation/SoleSignal_ER_Diagram.excalidraw` | Matches industry standard labeling |
 | Updated legend | `documentation/SoleSignal_ER_Diagram.excalidraw` | Now describes `\|\|` and `\|<` symbols correctly |
@@ -355,6 +358,10 @@ This overwrites `SoleSignal_ER_Diagram.png` in place.
 | Added `backend/.dockerignore` | `backend/.dockerignore` | Excludes node_modules, dist, .env, tests from image |
 | Added `docker-compose.yml` | `docker-compose.yml` | Orchestrates backend + postgres:14-alpine; health check ensures DB ready before backend starts; persistent volume for DB data |
 | Added `.env.example` | `.env.example` | Documents all required secrets: DB_PASSWORD, JWT_SECRET, Twilio credentials |
+
+### Known remaining issues
+- Auto-reconnect not yet tested on physical device — requires a build with the new code
+- Twilio SMS delivery not verified end-to-end on device (alerts create DB records, SMS send path confirmed in tests)
 
 ### How to run with Docker
 ```bash
