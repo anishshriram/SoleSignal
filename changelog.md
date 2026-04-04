@@ -342,6 +342,30 @@ This overwrites `SoleSignal_ER_Diagram.png` in place.
 
 ---
 
+## Session Summary (2026-04-04) — Docker Deployment + ER Diagram Crow's Foot Fix
+
+### What was done
+| Change | File(s) | Notes |
+|--------|---------|-------|
+| Fixed ER diagram crow's foot notation | `documentation/SoleSignal_ER_Diagram.excalidraw`, `.png` | Replaced incorrect single ticks with proper `\|\|` (one and only one) on all one-ends; replaced broken fan with proper `\|<` (tick + outward crow's foot) on all many-ends |
+| Changed "one-to-one" label to "1:1" | `documentation/SoleSignal_ER_Diagram.excalidraw` | Matches industry standard labeling |
+| Updated legend | `documentation/SoleSignal_ER_Diagram.excalidraw` | Now describes `\|\|` and `\|<` symbols correctly |
+| Added `backend/Dockerfile` | `backend/Dockerfile` | Node 20 Alpine; installs deps, generates Prisma client |
+| Added `backend/entrypoint.sh` | `backend/entrypoint.sh` | Runs `prisma migrate deploy` then starts server via `tsx` |
+| Added `backend/.dockerignore` | `backend/.dockerignore` | Excludes node_modules, dist, .env, tests from image |
+| Added `docker-compose.yml` | `docker-compose.yml` | Orchestrates backend + postgres:14-alpine; health check ensures DB ready before backend starts; persistent volume for DB data |
+| Added `.env.example` | `.env.example` | Documents all required secrets: DB_PASSWORD, JWT_SECRET, Twilio credentials |
+
+### How to run with Docker
+```bash
+cp .env.example .env
+# fill in .env with real values
+docker-compose up --build
+```
+Backend available at `http://localhost:3000`. PostgreSQL migrations run automatically on startup.
+
+---
+
 ## Master Document Update Requirements
 
 The following items were implemented during development but are **not reflected in the current Software Documentation Master PDF**. The document should be updated before final submission or handoff.
