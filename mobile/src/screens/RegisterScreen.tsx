@@ -1,3 +1,10 @@
+// screens/RegisterScreen.tsx — New account registration screen.
+//
+// Calls POST /users/register with name, email, phone_number, and password.
+// On success, shows an alert and navigates the user to LoginScreen.
+// Registration does NOT log the user in — they must sign in after registering.
+// (This avoids duplicating login logic and keeps the auth flow linear.)
+
 import React, { useState } from 'react';
 import {
   Alert,
@@ -27,17 +34,21 @@ export default function RegisterScreen({ navigation }: Props) {
   const [loading, setLoading] = useState(false);
 
   const handleRegister = async () => {
+    // Basic client-side validation before hitting the network
     if (!name || !email || !phone || !password) {
       Alert.alert('Error', 'All fields are required.');
       return;
     }
     setLoading(true);
     try {
+      // POST /users/register — returns { message, user_id } on 201
       await registerUser({ name, email, phone_number: phone, password });
+      // Registration succeeded — prompt the user to log in (no auto-login)
       Alert.alert('Account created', 'Please log in to continue.', [
         { text: 'OK', onPress: () => navigation.navigate('Login') },
       ]);
     } catch (err: any) {
+      // Backend returns specific error messages (e.g. "email already exists")
       const msg =
         err?.response?.data?.error || 'Registration failed. Please try again.';
       Alert.alert('Error', msg);

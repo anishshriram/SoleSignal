@@ -1,3 +1,18 @@
+// screens/PairingScreen.tsx — BLE sensor discovery and pairing screen.
+//
+// Pairing flow:
+//   1. User taps "Scan for sensors" → request BT permissions, wait for BT radio to power on
+//   2. bleService.startScan() begins scanning for devices advertising SOLE_SIGNAL_SERVICE_UUID
+//   3. Discovered named devices appear in a list (anonymous peripherals are filtered out)
+//   4. User taps a device → scan stops, BLE connect() runs, then POST /sensors/pair is called
+//   5. The backend links the BLE hardware UUID to this user's account in the DB
+//   6. The DB primary key (`id`) returned from the server is stored in BLEContext alongside
+//      the live Device object — HomeScreen uses both for monitoring and alert creation
+//   7. User is navigated to ContactsScreen to set up their emergency contacts
+//
+// stopScanRef is used to cancel the scan from the cleanup effect on unmount,
+// preventing ongoing scanning if the user navigates away mid-scan.
+
 import React, { useEffect, useRef, useState } from 'react';
 import {
   Alert,
@@ -23,10 +38,13 @@ type Props = {
 export default function PairingScreen({ navigation }: Props) {
   const { setBLEState } = useBLE();
   const [scanning, setScanning] = useState(false);
-  const [devices, setDevices] = useState<Device[]>([]);
-  const [connecting, setConnecting] = useState<string | null>(null);
+  const [devices, setDevices] = useState<Device[]>([]); // devices found during scan
+  const [connecting, setConnecting] = useState<string | null>(null); // device.id being connected to, or null
+  // stopScanRef stores the cancel function returned by bleService.startScan()
+  // so we can stop the scan on unmount or when connecting to a device
   const stopScanRef = useRef<(() => void) | null>(null);
 
+  // Cleanup: stop scanning if the user navigates away while a scan is in progress
   useEffect(() => {
     return () => {
       if (stopScanRef.current) {
@@ -36,20 +54,24 @@ export default function PairingScreen({ navigation }: Props) {
   }, []);
 
   const startScan = async () => {
+    // Request BT permissions (no-op on iOS, required on Android 12+)
     const granted = await bleService.requestPermissions();
     if (!granted) {
       Alert.alert('Permission required', 'Bluetooth permission is needed to scan for sensors.');
       return;
     }
 
+    // Wait for the Bluetooth radio to be on before scanning
     await bleService.waitForBluetooth();
     setDevices([]);
     setScanning(true);
 
+    // Start scan — filter by service UUID, auto-stop after 10 seconds
     stopScanRef.current = bleService.startScan(device => {
       // Only show devices that have a name — filters out anonymous peripherals
       if (!device.name) return;
       setDevices(prev => {
+        // Deduplicate — the same device can appear multiple times in scan results
         if (prev.find(d => d.id === device.id)) {
           return prev;
         }
@@ -57,22 +79,29 @@ export default function PairingScreen({ navigation }: Props) {
       });
     }, 10000);
 
+    // Mirror the 10-second timeout in UI state so the button re-enables after scan ends
     setTimeout(() => setScanning(false), 10000);
   };
 
   const connectAndPair = async (device: Device) => {
-    setConnecting(device.id);
+    setConnecting(device.id); // show spinner on this specific list row
     try {
+      // Stop scanning before connecting — scanning and connecting simultaneously can cause issues
       if (stopScanRef.current) {
         stopScanRef.current();
         setScanning(false);
       }
 
+      // BLE connect + service discovery
       const connectedDevice = await bleService.connect(device.id);
-      const res = await pairSensor(device.id);
-      const sensorDbId: number = res.data.id;
 
-      // Store the live BLE device + its DB id so HomeScreen can monitor it
+      // Call the backend to link this BLE hardware UUID to the authenticated user's account.
+      // `device.id` is the BLE hardware UUID — the server stores it as `sensor_id` (TEXT).
+      // The response includes `id` (DB primary key) which the app uses for alert creation.
+      const res = await pairSensor(device.id);
+      const sensorDbId: number = res.data.id; // DB primary key — used in POST /alerts
+
+      // Store the live Device object + DB id in BLEContext so HomeScreen can access them
       setBLEState(connectedDevice, sensorDbId);
 
       Alert.alert('Paired!', `${device.name || device.id} has been paired.`, [

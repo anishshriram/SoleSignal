@@ -1,3 +1,12 @@
+// screens/AlertSentScreen.tsx — Confirmation screen shown after an alert is sent.
+//
+// Receives the `alertId` (DB primary key of the alert record) as a route param
+// from HomeScreen after POST /alerts succeeds (or creates a record even on SMS failure).
+// Displays the alert ID for reference and provides a button to return to HomeScreen.
+//
+// Back navigation is disabled (headerBackVisible: false in App.tsx) — the user
+// should not be able to navigate back to the alert-in-progress state.
+
 import React from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -7,10 +16,11 @@ import { RootStackParamList } from '../../App';
 
 type Props = {
   navigation: NativeStackNavigationProp<RootStackParamList, 'AlertSent'>;
-  route: RouteProp<RootStackParamList, 'AlertSent'>;
+  route: RouteProp<RootStackParamList, 'AlertSent'>; // route.params.alertId is the DB alert id
 };
 
 export default function AlertSentScreen({ navigation, route }: Props) {
+  // alertId is passed from HomeScreen after dispatchAlert() completes
   const { alertId } = route.params;
 
   return (

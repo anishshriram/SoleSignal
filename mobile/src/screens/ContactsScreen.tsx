@@ -1,3 +1,20 @@
+// screens/ContactsScreen.tsx — Emergency contact management screen.
+//
+// Lists all emergency contacts for the authenticated user and provides
+// add, edit, and delete operations via a bottom-sheet modal.
+//
+// Data flow:
+//   - On each focus (useFocusEffect): GET /contacts → refresh list
+//   - Add: open empty modal → POST /contacts → refresh
+//   - Edit: open modal pre-filled with existing data → PATCH /contacts/:id → refresh
+//   - Delete: confirm alert → DELETE /contacts/:id → refresh
+//
+// The modal is shared between Add and Edit — the `editingContact` state determines
+// which operation handleSave() performs. If editingContact is null, it's an add.
+//
+// useFocusEffect (not useEffect) is used so the list refreshes every time the user
+// navigates back to this screen, not just on the first mount.
+
 import React, { useCallback, useState } from 'react';
 import {
   Alert,
@@ -26,8 +43,9 @@ type Props = {
   navigation: NativeStackNavigationProp<RootStackParamList, 'Contacts'>;
 };
 
+// Matches the shape returned by GET /contacts
 interface Contact {
-  id: number;
+  id: number;         // DB primary key — used for update/delete calls
   name: string;
   phone_number: string;
 }
@@ -35,11 +53,13 @@ interface Contact {
 export default function ContactsScreen({ navigation }: Props) {
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [modalVisible, setModalVisible] = useState(false);
-  const [editingContact, setEditingContact] = useState<Contact | null>(null);
+  const [editingContact, setEditingContact] = useState<Contact | null>(null); // null = adding new
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
   const [saving, setSaving] = useState(false);
 
+  // Refresh the contacts list each time this screen gains focus.
+  // This handles the case where the user navigates away and back (e.g. from HomeScreen).
   useFocusEffect(
     useCallback(() => {
       fetchContacts();
@@ -49,12 +69,14 @@ export default function ContactsScreen({ navigation }: Props) {
   const fetchContacts = async () => {
     try {
       const res = await getContacts();
+      // GET /contacts returns { contacts: [...] } — always 200, never 404 on empty
       setContacts(res.data?.contacts || []);
     } catch {
       Alert.alert('Error', 'Failed to load contacts.');
     }
   };
 
+  // Open the modal in "add" mode — clear any previous edit state
   const openAdd = () => {
     setEditingContact(null);
     setName('');
@@ -62,6 +84,7 @@ export default function ContactsScreen({ navigation }: Props) {
     setModalVisible(true);
   };
 
+  // Open the modal in "edit" mode — pre-fill with the selected contact's data
   const openEdit = (contact: Contact) => {
     setEditingContact(contact);
     setName(contact.name);
@@ -69,6 +92,8 @@ export default function ContactsScreen({ navigation }: Props) {
     setModalVisible(true);
   };
 
+  // handleSave — shared handler for both add and edit.
+  // Checks editingContact to decide which API call to make.
   const handleSave = async () => {
     if (!name || !phone) {
       Alert.alert('Error', 'Name and phone number are required.');
@@ -77,12 +102,14 @@ export default function ContactsScreen({ navigation }: Props) {
     setSaving(true);
     try {
       if (editingContact) {
+        // PATCH /contacts/:id — partial update, only sends changed fields
         await updateContact(editingContact.id, { name, phone_number: phone });
       } else {
+        // POST /contacts — create a new contact
         await addContact({ name, phone_number: phone });
       }
       setModalVisible(false);
-      fetchContacts();
+      fetchContacts(); // refresh the list after save
     } catch (err: any) {
       const msg =
         err?.response?.data?.error || 'Failed to save contact.';
@@ -92,6 +119,7 @@ export default function ContactsScreen({ navigation }: Props) {
     }
   };
 
+  // handleDelete — shows a confirmation dialog before calling DELETE /contacts/:id
   const handleDelete = (contact: Contact) => {
     Alert.alert(
       'Delete contact',
@@ -104,7 +132,7 @@ export default function ContactsScreen({ navigation }: Props) {
           onPress: async () => {
             try {
               await deleteContact(contact.id);
-              fetchContacts();
+              fetchContacts(); // refresh list after deletion
             } catch {
               Alert.alert('Error', 'Failed to delete contact.');
             }

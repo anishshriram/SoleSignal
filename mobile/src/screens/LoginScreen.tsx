@@ -1,3 +1,10 @@
+// screens/LoginScreen.tsx — User login screen.
+//
+// Sends credentials to POST /users/login, receives a JWT, decodes the payload
+// to extract user_id and email, then stores the token + identity in the Keychain
+// via AuthContext.setAuth(). After setAuth() resolves, App.tsx sees a non-null
+// user and automatically navigates to the HomeScreen — no manual navigation.navigate() needed.
+
 import React, { useState } from 'react';
 import {
   Alert,
@@ -14,12 +21,14 @@ import { loginUser } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { Colors, Spacing, Typography } from '../theme';
 import { RootStackParamList } from '../../App';
-import { jwtDecode } from 'jwt-decode';
+import { jwtDecode } from 'jwt-decode'; // Decodes the JWT to extract payload without verifying signature
 
 type Props = {
   navigation: NativeStackNavigationProp<RootStackParamList, 'Login'>;
 };
 
+// Shape of the JWT payload returned by POST /users/login
+// (matches what users.ts signs: { user_id, email, iat, exp })
 interface JWTPayload {
   user_id: number;
   email: string;
@@ -40,9 +49,14 @@ export default function LoginScreen({ navigation }: Props) {
     try {
       const res = await loginUser({ email, password });
       const { token } = res.data as { message: string; token: string };
+      // Decode the JWT client-side to extract user_id and email.
+      // jwtDecode() does NOT verify the signature — it just parses the base64 payload.
+      // Signature verification happens on the backend for each protected request.
       const payload = jwtDecode<JWTPayload>(token);
+      // Store token + identity in Keychain and update React state.
+      // After this, App.tsx sees non-null user and swaps to the authenticated screen set.
       await setAuth(token, { user_id: payload.user_id, email: payload.email });
-      // Navigation handled by App.tsx auth state
+      // Navigation handled by App.tsx auth state — no navigation.navigate() needed here
     } catch (err: any) {
       const msg =
         err?.response?.data?.error || 'Login failed. Check your credentials.';
