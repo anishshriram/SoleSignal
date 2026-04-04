@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { Device } from 'react-native-ble-plx';
 import Geolocation from '@react-native-community/geolocation';
 import { useAuth } from '../context/AuthContext';
 import { useBLE } from '../context/BLEContext';
@@ -35,7 +36,7 @@ let logCounter = 0;
 
 export default function HomeScreen({ navigation }: Props) {
   const { clearAuth } = useAuth();
-  const { connectedDevice, sensorDbId, clearBLEState, unmonitorRef } = useBLE();
+  const { connectedDevice, sensorDbId, setBLEState, clearBLEState, unmonitorRef } = useBLE();
 
   const [sensorPaired, setSensorPaired] = useState(false);
   const [bleConnected, setBleConnected] = useState(false);
@@ -44,6 +45,7 @@ export default function HomeScreen({ navigation }: Props) {
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const alertInProgress = useRef(false);
   const logListRef = useRef<FlatList>(null);
+  const reconnectAttempted = useRef(false);
 
   const addLog = useCallback((msg: string, level: LogLevel = 'info') => {
     const ts = new Date().toLocaleTimeString('en-US', { hour12: false });
@@ -129,6 +131,10 @@ export default function HomeScreen({ navigation }: Props) {
         if (res.data?.is_paired) {
           setSensorPaired(true);
           setResolvedSensorDbId(res.data.id);
+          if (!connectedDevice && !reconnectAttempted.current) {
+            reconnectAttempted.current = true;
+            reconnectSilently(res.data.sensor_id, res.data.id);
+          }
         } else {
           setSensorPaired(false);
           setResolvedSensorDbId(null);
@@ -137,6 +143,29 @@ export default function HomeScreen({ navigation }: Props) {
         setSensorPaired(false);
         setResolvedSensorDbId(null);
       }
+    }
+  };
+
+  const reconnectSilently = async (bleDeviceId: string, dbId: number) => {
+    addLog('Auto-reconnect: looking for paired sensor…', 'info');
+    try {
+      await bleService.requestPermissions();
+      await Promise.race([
+        bleService.waitForBluetooth(),
+        new Promise<void>((_, reject) =>
+          setTimeout(() => reject(new Error('BT timeout')), 3000),
+        ),
+      ]);
+      const device = await Promise.race([
+        bleService.connect(bleDeviceId),
+        new Promise<Device>((_, reject) =>
+          setTimeout(() => reject(new Error('connect timeout')), 5000),
+        ),
+      ]);
+      setBLEState(device, dbId);
+      addLog('Auto-reconnected to sensor', 'ok');
+    } catch {
+      addLog('Sensor not in range — tap Reconnect to retry', 'warn');
     }
   };
 
