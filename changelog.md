@@ -84,8 +84,8 @@ Build the SoleSignal MVP backend and mobile app. The backend is a REST API (Node
 - [x] Integration test — end-to-end register → login → pair sensor → add contact → send alert flow covered in `alerts.test.ts`
 
 ### Stage 6 — Deployment
-- [ ] Docker setup
-- [ ] Production environment configuration
+- [x] Docker setup — `backend/Dockerfile`, `docker-compose.yml`, `backend/entrypoint.sh`, `backend/.dockerignore`
+- [x] Production environment configuration — `.env.example` documents all required secrets
 
 ---
 
@@ -161,7 +161,7 @@ echo "http://$(ipconfig getifaddr en0):3000/"
 
 ## Progress Percentage
 
-**~97%** — Backend complete with Twilio SMS wired. Mobile app fully functional on device. All 45 API tests passing. BLE tap detection confirmed working end-to-end. Only remaining item: Docker/deployment (Stage 6).
+**100%** — All stages complete. Backend, mobile app, BLE, Twilio SMS, tests, ER diagram, and Docker deployment all done.
 
 ---
 
