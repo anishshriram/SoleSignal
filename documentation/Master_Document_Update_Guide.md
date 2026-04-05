@@ -482,7 +482,147 @@ npm run dev       # starts server on port 3000
 
 ---
 
-## 11. Additional Implementation Notes
+## 11. Embedded ML and Firmware — Add New Section
+
+This section is entirely absent from the current document. Add it after the BLE Integration section.
+
+### Overview
+
+The SoleSignal shoe insert does not use a simple pressure threshold to detect the activation gesture. It runs a **Convolutional Neural Network (CNN) directly on the microcontroller** to classify 2-channel pressure time-series data in real time. This approach distinguishes a deliberate tap pattern from normal walking, running, or accidental pressure.
+
+---
+
+### 11.1 CNN Model
+
+**File:** `cnn/Solesignal_train_2ch.PY`
+
+The model is trained offline on a laptop and then deployed to the hardware.
+
+**Input:**
+- Two analog pressure sensors embedded in the shoe insert: **A0** (front/ball of foot) and **A2** (heel)
+- Data collected as two CSV files: `tap_data.csv` (labeled 1) and `normal_data.csv` (labeled 0)
+- Rows contain raw ADC readings: `A0:<value> A2:<value>`
+
+**Preprocessing:**
+- Both channels are scaled to 0–1 range using MinMaxScaler (fit on the combined dataset)
+- Time-series data is segmented into sliding windows of 50 samples with 25-sample step (50% overlap)
+- Class weighting applied during training to compensate for fewer tap samples than walking samples
+
+**Architecture — 1D CNN binary classifier:**
+
+| Layer | Config |
+|-------|--------|
+| Input | (50 timesteps × 2 channels) |
+| Conv1D | 16 filters, kernel size 5, ReLU, same padding |
+| MaxPooling1D | pool size 2 |
+| Dropout | 0.2 |
+| Conv1D | 32 filters, kernel size 3, ReLU, same padding |
+| MaxPooling1D | pool size 2 |
+| Dropout | 0.2 |
+| Flatten | — |
+| Dense | 16 units, ReLU |
+| Dropout | 0.3 |
+| Dense (output) | 1 unit, sigmoid |
+
+Output: probability that the current 50-sample window is a tap gesture (0.0–1.0).
+
+**Training config:**
+- Optimizer: Adam (lr=0.001)
+- Loss: binary cross-entropy
+- Max epochs: 100 with EarlyStopping (patience=15)
+- Batch size: 16
+- Learning rate reduction on plateau (factor=0.5, patience=7, min lr=1e-5)
+
+**After training, the script:**
+1. Converts the model to **TFLite** format (compressed for microcontrollers)
+2. Verifies model size < 100KB (required to fit in nRF52840 flash memory)
+3. Auto-generates `hardware/solesignal_model.h` — a C header containing:
+   - The TFLite model as a raw byte array (`const uint8_t solesignal_model[]`)
+   - Normalization constants (`SCALER_MIN_A0`, `SCALER_RANGE_A0`, `SCALER_MIN_A2`, `SCALER_RANGE_A2`) for use in firmware
+   - `WINDOW_SIZE`, `SOS_THRESHOLD`, and `VOTE_COUNT` constants
+
+---
+
+### 11.2 Firmware
+
+**File:** `hardware/SoloSignal.ino`
+
+Runs on the nRF52840 microcontroller. Uses the **ArduTFLite** library to run TFLite inference on-device.
+
+**Sampling loop (20Hz):**
+- Every 50ms: reads analog pins A0 and A2
+- If both pins read < 500: shoe not being worn → reset all state (buffer, vote counter)
+- Otherwise: normalizes each reading using the constants baked in from training, appends to a 50×2 rolling buffer
+
+**Inference:**
+- When the buffer reaches 50 samples, `runInference()` is called
+- The 100 values (50 samples × 2 channels) are loaded into the TFLite input tensor
+- Model runs and returns a confidence score (0.0–1.0)
+- Score is printed to Serial for debugging
+
+**Voting system (false positive prevention):**
+- A score ≥ `SOS_THRESHOLD` (0.7) increments `vote_count`
+- When `vote_count` reaches `VOTE_COUNT` (3 consecutive high-confidence windows), `triggerSOS()` fires
+- Any window with score < 0.7 resets `vote_count` to zero
+- This requires a sustained, intentional gesture pattern — not a brief accidental spike
+
+**On SOS trigger:**
+1. Prints `"SOS"` to Serial (read by the BLE module)
+2. Pulses the vibration motor 3 times (haptic confirmation to the wearer)
+3. Sets `sos_active = true` to prevent re-triggering until `vote_count` resets
+
+**Sliding window:**
+After inference, the buffer is shifted by 25 samples (half the window size). This gives 50% overlap between successive windows for continuous, low-latency detection.
+
+**Key firmware constants (from `solesignal_model.h`):**
+
+| Constant | Value | Meaning |
+|---------|-------|---------|
+| `WINDOW_SIZE` | 50 | Samples per inference window |
+| `SOS_THRESHOLD` | 0.7 | Minimum CNN score to count as a vote |
+| `VOTE_COUNT` | 3 | Consecutive high-score windows before SOS fires |
+| `SAMPLE_MS` | 50ms | Sampling interval (20Hz) |
+| `SCALER_MIN_A0/A2` | from training | Used for normalization on-device |
+| `SCALER_RANGE_A0/A2` | from training | Used for normalization on-device |
+
+---
+
+### 11.3 Signal Path (Firmware → App → Backend)
+
+```
+Shoe insert pressure sensors (A0, A2)
+  ↓ analog read at 20Hz
+nRF52840 microcontroller
+  ↓ 50-sample buffer filled → CNN inference
+  ↓ 3 consecutive votes ≥ 0.7
+triggerSOS(): prints "SOS" to Serial
+  ↓ BLE module reads Serial → writes "1" to TAP_PATTERN_CHARACTERISTIC_UUID
+Phone receives BLE notification
+  ↓ bleService.monitorTapPattern(): atob(value) → "1"
+  ↓ onTapPattern() fires in HomeScreen
+handleAutoAlert() → dispatchAlert()
+  ↓ GPS request (3s timeout)
+  ↓ POST /alerts { sensor_id, contact_id, gps_latitude, gps_longitude }
+Backend → Twilio SMS to emergency contact
+```
+
+The `"1"` value described in Section 7 (BLE Integration) is exactly what the firmware sends when the CNN confirms a SOS gesture after 3 votes.
+
+---
+
+### 11.4 Re-training the Model
+
+To re-train with new data:
+1. Place `tap_data.csv` and `normal_data.csv` in the `cnn/` directory
+2. Run: `python cnn/Solesignal_train_2ch.PY`
+3. The script outputs `solesignal_model.h` — copy it to `hardware/solesignal_model.h`
+4. Re-flash the Arduino firmware
+
+Training data files are **not included in the repository** (not committed). The `solesignal_model.h` in the repo is the pre-trained version.
+
+---
+
+## 12. Additional Implementation Notes
 
 ### Phone Number Format
 

@@ -343,6 +343,46 @@ This overwrites `SoleSignal_ER_Diagram.png` in place.
 
 ---
 
+## Session Summary (2026-04-05) — CNN Training Pipeline + Arduino Firmware Added
+
+### What was added
+| Item | File(s) | Notes |
+|------|---------|-------|
+| CNN training script | `cnn/Solesignal_train_2ch.PY` | Trains a 1D CNN binary classifier on two analog pressure channels (A0, A2) to distinguish tap gesture from normal walking; outputs TFLite model + Arduino header |
+| Arduino firmware | `hardware/SoloSignal.ino` | Runs on nRF52840; samples A0+A2 at 20Hz, runs CNN inference on 50-sample sliding windows, uses 3-vote majority before triggering SOS; sends `"SOS"` to Serial (read by BLE module as `"1"` on the characteristic) |
+| Baked model weights | `hardware/solesignal_model.h` | Auto-generated C header containing the TFLite model as a byte array + normalization constants (SCALER_MIN_A0, SCALER_RANGE_A0, etc.) |
+
+### How it connects to the rest of the system
+- The firmware's `triggerSOS()` prints `"SOS"` to Serial → BLE module writes `"1"` to `TAP_PATTERN_CHARACTERISTIC_UUID`
+- The mobile app's `bleService.monitorTapPattern()` decodes the characteristic value and fires `onTapPattern()` when it sees `"1"`
+- This is the signal path described in the BLE section of the Master Document Update Guide
+
+### Key parameters
+| Constant | Value | Meaning |
+|---------|-------|---------|
+| `WINDOW_SIZE` | 50 | Number of samples per inference window |
+| `STEP` | 25 | Sliding step (50% overlap) |
+| `SOS_THRESHOLD` | 0.7 | Minimum CNN confidence to count as a vote |
+| `VOTE_COUNT` | 3 | Consecutive high-confidence windows required to trigger SOS |
+| `SAMPLE_MS` | 50ms | Sampling interval (20Hz) |
+
+### What is still pending
+- Training data (`tap_data.csv`, `normal_data.csv`) not yet in the repo — needed to re-train the model
+- `solesignal_model.h` in the repo is the pre-trained version; re-training requires running the Python script
+
+---
+
+## Session Summary (2026-04-05) — Inline Comments Added to All Source Files
+
+### What was done
+All 20 backend and mobile source files now have detailed inline comments explaining what each piece of code does, why design decisions were made, and how components connect. Files covered:
+
+**Backend:** `server.ts`, `app.ts`, `types/express.d.ts`, `middleware/auth.ts`, `routes/users.ts`, `routes/sensors.ts`, `routes/contacts.ts`, `routes/alerts.ts`
+
+**Mobile:** `services/api.ts`, `services/ble.ts`, `context/AuthContext.tsx`, `context/BLEContext.tsx`, `theme.ts`, `App.tsx`, `screens/LoginScreen.tsx`, `screens/RegisterScreen.tsx`, `screens/PairingScreen.tsx`, `screens/ContactsScreen.tsx`, `screens/HomeScreen.tsx`, `screens/AlertSentScreen.tsx`
+
+---
+
 ## Session Summary (2026-04-04) — Auto-Reconnect + Reanimated Cleanup + Docker + Crow's Foot Fix
 
 ### What was done
