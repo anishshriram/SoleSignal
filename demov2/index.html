@@ -1,0 +1,554 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Dino Dude — SoleSignal</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      background: #0a0a0a;
+      color: #e0e0e0;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 30px 20px;
+    }
+
+    header { text-align: center; margin-bottom: 24px; }
+    header h1 { font-size: 1.8rem; letter-spacing: 0.08em; color: #fff; }
+    header p  { color: #888; margin-top: 6px; font-size: 0.85rem; }
+
+    .card {
+      background: #141414;
+      border: 1px solid #2a2a2a;
+      border-radius: 12px;
+      padding: 20px 24px;
+      width: 100%;
+      max-width: 480px;
+      margin-bottom: 16px;
+    }
+    .card h2 {
+      font-size: 0.72rem;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      color: #555;
+      margin-bottom: 12px;
+    }
+    .status-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 8px;
+    }
+    .dot {
+      width: 10px; height: 10px;
+      border-radius: 50%;
+      background: #333;
+      flex-shrink: 0;
+      transition: background 0.3s;
+    }
+    .dot.green  { background: #22c55e; box-shadow: 0 0 8px #22c55e88; }
+    .dot.yellow { background: #eab308; box-shadow: 0 0 8px #eab30888; }
+    .dot.red    { background: #ef4444; box-shadow: 0 0 8px #ef444488; }
+    .status-text { font-size: 0.85rem; color: #ccc; }
+
+    .btn-row { display: flex; gap: 8px; margin-top: 10px; }
+    button {
+      flex: 1;
+      padding: 11px; border: none; border-radius: 8px;
+      font-size: 0.88rem; font-weight: 600; cursor: pointer;
+      transition: opacity 0.2s, background 0.2s;
+      letter-spacing: 0.03em;
+    }
+    button:disabled { opacity: 0.35; cursor: not-allowed; }
+    #btn-scan { background: #2563eb; color: #fff; }
+    #btn-scan:not(:disabled):hover { background: #1d4ed8; }
+    #btn-disconnect { background: #1f1f1f; color: #ef4444; border: 1px solid #ef4444; }
+    #btn-disconnect:not(:disabled):hover { background: #2c1212; }
+
+    canvas {
+      border: 1px solid #2a2a2a;
+      border-radius: 8px;
+      display: block;
+    }
+
+    #log-container {
+      font-family: 'SF Mono', 'Fira Code', monospace;
+      font-size: 0.74rem;
+      background: #0d0d0d;
+      border: 1px solid #1e1e1e;
+      border-radius: 8px;
+      padding: 12px;
+      height: 110px;
+      overflow-y: auto;
+      color: #6b7280;
+    }
+    #log-container .entry { margin-bottom: 2px; line-height: 1.5; }
+    #log-container .entry.info  { color: #9ca3af; }
+    #log-container .entry.ok    { color: #22c55e; }
+    #log-container .entry.warn  { color: #eab308; }
+    #log-container .entry.error { color: #ef4444; }
+    #log-container .ts { color: #374151; margin-right: 6px; }
+
+    #hint {
+      margin-top: 10px;
+      font-size: 0.75rem;
+      color: #555;
+      text-align: center;
+      letter-spacing: 0.05em;
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>SoleSignal</h1>
+  <p>Dino Dude — step on your insert to jump</p>
+</header>
+
+<!-- ── Connection Card ── -->
+<div class="card">
+  <h2>Sensor Connection</h2>
+  <div class="status-row">
+    <div class="dot" id="dot-ble"></div>
+    <span class="status-text" id="txt-ble">Checking Bluetooth…</span>
+  </div>
+  <div class="status-row">
+    <div class="dot" id="dot-conn"></div>
+    <span class="status-text" id="txt-conn">Disconnected</span>
+  </div>
+  <div class="btn-row">
+    <button id="btn-scan">Scan &amp; Connect</button>
+    <button id="btn-disconnect" disabled>Disconnect</button>
+  </div>
+</div>
+
+<!-- ── Game Card ── -->
+<div class="card" style="padding: 16px;">
+  <h2>Game</h2>
+  <canvas id="c" width="432" height="200"></canvas>
+  <p id="hint">Connect sensor — step to jump &nbsp;|&nbsp; SPACE works too</p>
+</div>
+
+<!-- ── Log Card ── -->
+<div class="card">
+  <h2>Event Log</h2>
+  <div id="log-container"></div>
+</div>
+
+<script>
+  // ── BLE ────────────────────────────────────────────────────────
+  const SERVICE_UUID        = "12345678-1234-1234-1234-1234567890ab";
+  const CHARACTERISTIC_UUID = "99999999-8888-7777-6666-555555555555";
+
+  let bleDevice = null;
+  let bleChar   = null;
+
+  const dotBle  = document.getElementById("dot-ble");
+  const txtBle  = document.getElementById("txt-ble");
+  const dotConn = document.getElementById("dot-conn");
+  const txtConn = document.getElementById("txt-conn");
+  const btnScan = document.getElementById("btn-scan");
+  const btnDisc = document.getElementById("btn-disconnect");
+  const logBox  = document.getElementById("log-container");
+
+  function log(msg, level = "info") {
+    const ts  = new Date().toLocaleTimeString("en-US", { hour12: false });
+    const div = document.createElement("div");
+    div.className = `entry ${level}`;
+    div.innerHTML = `<span class="ts">${ts}</span>${msg}`;
+    logBox.appendChild(div);
+    logBox.scrollTop = logBox.scrollHeight;
+  }
+
+  async function checkBluetooth() {
+    if (!navigator.bluetooth) {
+      dotBle.className = "dot red";
+      txtBle.textContent = "Web Bluetooth not supported — use Chrome/Edge";
+      log("Web Bluetooth unavailable.", "error");
+      btnScan.disabled = true;
+      return false;
+    }
+    const available = await navigator.bluetooth.getAvailability();
+    if (!available) {
+      dotBle.className = "dot red";
+      txtBle.textContent = "Bluetooth adapter off";
+      log("No Bluetooth adapter found.", "warn");
+      btnScan.disabled = true;
+      return false;
+    }
+    dotBle.className = "dot green";
+    txtBle.textContent = "Bluetooth ready";
+    log("Bluetooth adapter ready.", "ok");
+    return true;
+  }
+
+  async function connect() {
+    btnScan.disabled = true;
+    log("Opening BLE device picker…", "info");
+    try {
+      bleDevice = await navigator.bluetooth.requestDevice({
+        filters: [{ services: [SERVICE_UUID] }],
+        optionalServices: [SERVICE_UUID],
+      });
+      log(`Device selected: "${bleDevice.name || bleDevice.id}"`, "ok");
+      bleDevice.addEventListener("gattserverdisconnected", onDisconnected);
+
+      dotConn.className = "dot yellow";
+      txtConn.textContent = "Connecting…";
+
+      const server  = await bleDevice.gatt.connect();
+      const service = await server.getPrimaryService(SERVICE_UUID);
+      bleChar        = await service.getCharacteristic(CHARACTERISTIC_UUID);
+
+      await bleChar.startNotifications();
+      bleChar.addEventListener("characteristicvaluechanged", onBLEData);
+
+      dotConn.className = "dot green";
+      txtConn.textContent = `Connected — ${bleDevice.name || bleDevice.id}`;
+      btnDisc.disabled = false;
+      log("Notifications started — step on insert to jump!", "ok");
+    } catch (err) {
+      log(`Connection failed: ${err.message}`, "error");
+      dotConn.className = "dot red";
+      txtConn.textContent = "Connection failed";
+      btnScan.disabled = false;
+    }
+  }
+
+  function onBLEData(event) {
+    const value = new TextDecoder().decode(event.target.value).trim();
+    log(`Sensor: "${value}"`, "info");
+    if (value === "1") {
+      log("Step detected → jump!", "ok");
+      jump();
+    }
+  }
+
+  function onDisconnected() {
+    dotConn.className = "dot red";
+    txtConn.textContent = "Disconnected";
+    btnScan.disabled = false;
+    btnDisc.disabled = true;
+    bleChar = null;
+    log("Sensor disconnected.", "warn");
+  }
+
+  async function disconnect() {
+    if (bleChar) { try { await bleChar.stopNotifications(); } catch (_) {} }
+    if (bleDevice && bleDevice.gatt.connected) bleDevice.gatt.disconnect();
+  }
+
+  btnScan.addEventListener("click", async () => {
+    if (await checkBluetooth()) await connect();
+  });
+  btnDisc.addEventListener("click", disconnect);
+  checkBluetooth();
+
+  // ── Game ───────────────────────────────────────────────────────
+  const canvas = document.getElementById("c");
+  const ctx    = canvas.getContext("2d");
+  const W = canvas.width;
+  const H = canvas.height;
+
+  const GROUND_Y    = H - 36;     // y of the ground line
+  const GRAVITY     = 0.55;
+  const JUMP_V      = -11;
+  const RUNNER_X    = 60;         // fixed x of the runner
+  const HEAD_R      = 7;          // head radius
+
+  // obstacle config
+  const OBS_W       = 14;
+  const OBS_MIN_H   = 22;
+  const OBS_MAX_H   = 48;
+  const OBS_GAP_MIN = 280;
+  const OBS_GAP_MAX = 480;
+
+  let state = "idle";
+  let score = 0, best = 0;
+  let frameScore = 0;             // increments every frame when running
+
+  // runner
+  let runY  = GROUND_Y;           // bottom of runner feet
+  let vy    = 0;
+  let onGround = true;
+  let legPhase = 0;               // for running animation
+
+  // obstacles
+  let obstacles = [];
+  let nextObsDist = 300;          // distance until next obstacle spawns
+
+  // scrolling ground decorations
+  let groundOffset = 0;
+  let speed = 4;                  // pixels/frame, increases over time
+
+  // ── Runner drawing ──────────────────────────────────────────
+  function drawRunner(by, phase) {
+    // by = bottom of feet y
+    const cx = RUNNER_X;
+    const headY = by - 26 - HEAD_R * 2;   // top of head
+
+    ctx.save();
+    ctx.strokeStyle = "#CC0033";
+    ctx.fillStyle   = "#CC0033";
+    ctx.lineWidth   = 2.2;
+    ctx.lineCap     = "round";
+
+    // head
+    ctx.beginPath();
+    ctx.arc(cx, headY + HEAD_R, HEAD_R, 0, Math.PI * 2);
+    ctx.fill();
+
+    // eye
+    ctx.fillStyle = "#fff";
+    ctx.beginPath();
+    ctx.arc(cx + 4, headY + HEAD_R - 2, 2.2, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "#000";
+    ctx.beginPath();
+    ctx.arc(cx + 4.8, headY + HEAD_R - 2, 1.1, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.strokeStyle = "#CC0033";
+
+    // body
+    const bodyTop = headY + HEAD_R * 2;
+    const bodyBot = by - 14;
+    ctx.beginPath();
+    ctx.moveTo(cx, bodyTop);
+    ctx.lineTo(cx, bodyBot);
+    ctx.stroke();
+
+    // arms swing opposite to legs
+    const armSwing = onGround ? Math.sin(phase) * 10 : 0;
+    ctx.beginPath();
+    ctx.moveTo(cx, bodyTop + 5);
+    ctx.lineTo(cx - 12, bodyTop + 5 + armSwing);
+    ctx.moveTo(cx, bodyTop + 5);
+    ctx.lineTo(cx + 12, bodyTop + 5 - armSwing);
+    ctx.stroke();
+
+    // legs
+    const legSwing = onGround ? Math.sin(phase) * 12 : 4;
+    ctx.beginPath();
+    ctx.moveTo(cx, bodyBot);
+    ctx.lineTo(cx - 10, by + (onGround ? legSwing : 8));
+    ctx.moveTo(cx, bodyBot);
+    ctx.lineTo(cx + 10, by + (onGround ? -legSwing : -4));
+    ctx.stroke();
+
+    ctx.restore();
+  }
+
+  // ── Obstacle (cactus-style) ─────────────────────────────────
+  function drawObstacle(obs) {
+    const x = obs.x;
+    const h = obs.h;
+    const top = GROUND_Y - h;
+
+    ctx.fillStyle = "#2d7a2d";
+
+    // main stem
+    ctx.fillRect(x, top, OBS_W, h);
+
+    // left arm
+    const armH = Math.floor(h * 0.38);
+    const armY  = top + Math.floor(h * 0.28);
+    ctx.fillRect(x - 9, armY, 9, OBS_W * 0.7);
+    ctx.fillRect(x - 9, armY - armH, OBS_W * 0.7, armH);
+
+    // right arm
+    ctx.fillRect(x + OBS_W, armY + 6, 9, OBS_W * 0.7);
+    ctx.fillRect(x + OBS_W + 2, armY + 6 - Math.floor(armH * 0.7), OBS_W * 0.7, Math.floor(armH * 0.7));
+  }
+
+  // ── Background ──────────────────────────────────────────────
+  function drawBG() {
+    // sky
+    ctx.fillStyle = "#1a1a2e";
+    ctx.fillRect(0, 0, W, GROUND_Y);
+
+    // stars (slow parallax)
+    ctx.fillStyle = "rgba(255,255,255,0.5)";
+    [[40,20],[110,12],[190,35],[280,8],[360,28],[420,18],
+     [70,70],[160,55],[250,80],[340,60],[410,75]].forEach(([sx, sy]) => {
+      const x = ((sx - groundOffset * 0.12) % W + W) % W;
+      ctx.fillRect(x, sy, 1.5, 1.5);
+    });
+
+    // ground fill
+    ctx.fillStyle = "#1e1e1e";
+    ctx.fillRect(0, GROUND_Y, W, H - GROUND_Y);
+
+    // ground line
+    ctx.strokeStyle = "#CC0033";
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(0, GROUND_Y);
+    ctx.lineTo(W, GROUND_Y);
+    ctx.stroke();
+
+    // scrolling ground dashes
+    ctx.strokeStyle = "#2a2a2a";
+    ctx.lineWidth = 1;
+    for (let i = 0; i < 10; i++) {
+      const lx = ((i * 50 - groundOffset) % W + W) % W;
+      ctx.beginPath();
+      ctx.moveTo(lx, GROUND_Y + 10);
+      ctx.lineTo(lx + 24, GROUND_Y + 10);
+      ctx.stroke();
+    }
+  }
+
+  // ── HUD ─────────────────────────────────────────────────────
+  function drawHUD() {
+    ctx.textAlign = "right";
+    ctx.fillStyle = "#666";
+    ctx.font = "11px 'Courier New'";
+    ctx.fillText(`BEST ${best}`, W - 12, 20);
+    ctx.fillStyle = "#ccc";
+    ctx.font = "bold 15px 'Courier New'";
+    ctx.fillText(score, W - 12, 38);
+  }
+
+  // ── Overlays ─────────────────────────────────────────────────
+  function drawOverlay(title, sub) {
+    ctx.fillStyle = "rgba(0,0,0,0.55)";
+    ctx.fillRect(0, 0, W, H);
+    ctx.textAlign = "center";
+    ctx.fillStyle = "#CC0033";
+    ctx.font = "bold 28px 'Courier New'";
+    ctx.fillText(title, W / 2, H / 2 - 28);
+    ctx.fillStyle = "#bbb";
+    ctx.font = "13px 'Courier New'";
+    sub.forEach((line, i) => ctx.fillText(line, W / 2, H / 2 + 4 + i * 20));
+  }
+
+  // ── Collision ────────────────────────────────────────────────
+  // Runner hitbox: rect from (RUNNER_X-10, runY-38) to (RUNNER_X+10, runY)
+  function collides() {
+    for (const obs of obstacles) {
+      const obsTop = GROUND_Y - obs.h;
+      if (
+        RUNNER_X + 9  > obs.x + 2 &&
+        RUNNER_X - 9  < obs.x + OBS_W - 2 &&
+        runY - 2      > obsTop
+      ) return true;
+    }
+    return false;
+  }
+
+  // ── Reset ────────────────────────────────────────────────────
+  function reset() {
+    runY      = GROUND_Y;
+    vy        = 0;
+    onGround  = true;
+    legPhase  = 0;
+    obstacles = [];
+    score     = 0;
+    frameScore= 0;
+    speed     = 4;
+    nextObsDist = 300;
+    groundOffset = 0;
+    state = "running";
+  }
+
+  // ── Jump ─────────────────────────────────────────────────────
+  function jump() {
+    if (state === "idle" || state === "dead") { reset(); return; }
+    if (state === "running" && onGround) {
+      vy = JUMP_V;
+      onGround = false;
+    }
+  }
+
+  document.addEventListener("keydown", e => {
+    if (e.code === "Space") { e.preventDefault(); jump(); }
+  });
+  canvas.addEventListener("pointerdown", e => { e.preventDefault(); jump(); });
+
+  // ── Main loop ────────────────────────────────────────────────
+  let lastTime = 0;
+
+  function loop(ts) {
+    lastTime = ts;
+
+    drawBG();
+
+    if (state === "running") {
+      // speed ramp
+      speed = 4 + Math.floor(frameScore / 300) * 0.5;
+
+      // physics
+      if (!onGround) {
+        vy   += GRAVITY;
+        runY += vy;
+        if (runY >= GROUND_Y) {
+          runY     = GROUND_Y;
+          vy       = 0;
+          onGround = true;
+        }
+      }
+
+      // leg animation
+      if (onGround) legPhase += 0.22;
+
+      // ground scroll
+      groundOffset += speed;
+
+      // score
+      frameScore++;
+      score = Math.floor(frameScore / 6);
+      if (score > best) best = score;
+
+      // obstacle spawning
+      nextObsDist -= speed;
+      if (nextObsDist <= 0) {
+        const h = OBS_MIN_H + Math.random() * (OBS_MAX_H - OBS_MIN_H);
+        obstacles.push({ x: W + 10, h: Math.floor(h) });
+        nextObsDist = OBS_GAP_MIN + Math.random() * (OBS_GAP_MAX - OBS_GAP_MIN);
+      }
+
+      // move obstacles
+      for (const obs of obstacles) obs.x -= speed;
+      obstacles = obstacles.filter(o => o.x + OBS_W + 16 > 0);
+
+      // draw
+      obstacles.forEach(drawObstacle);
+      drawRunner(runY, legPhase);
+      drawHUD();
+
+      if (collides()) state = "dead";
+
+    } else if (state === "idle") {
+      // idle: runner bounces gently in place
+      const bob = Math.sin(ts / 400) * 3;
+      legPhase += 0.06;
+      drawRunner(GROUND_Y + bob, legPhase);
+      drawOverlay("DINO DUDE", [
+        "Step on sensor or press SPACE",
+        "to start running",
+      ]);
+
+    } else {
+      // dead: show last frame + overlay
+      obstacles.forEach(drawObstacle);
+      drawRunner(runY, legPhase);
+      drawHUD();
+      drawOverlay("GAME OVER", [
+        `Score: ${score}   Best: ${best}`,
+        "",
+        "Step or SPACE to retry",
+      ]);
+    }
+
+    requestAnimationFrame(loop);
+  }
+
+  requestAnimationFrame(ts => { lastTime = ts; loop(ts); });
+</script>
+</body>
+</html>

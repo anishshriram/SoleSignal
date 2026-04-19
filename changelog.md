@@ -343,6 +343,51 @@ This overwrites `SoleSignal_ER_Diagram.png` in place.
 
 ---
 
+## Session Summary (2026-04-19) — Dino Game + Google Slides Controller + Twilio Investigation
+
+### What was done
+| Item | File(s) | Notes |
+|------|---------|-------|
+| Converted Flappy Bird → Dino game | `demov2/index.html` | Chrome dino style — figure runs rightward, cactus obstacles scroll in, jump only works on ground, speed ramps over time, BLE tap = jump |
+| Created HTML slideshow | `demov3/index.html` | 6 SoleSignal-themed slides (title, problem, how it works, ML, stack, stats); BLE tap = next slide; Space/arrow keys work too; connection box matches demov1 style |
+| Created Google Slides Python controller | `demov3/sensor_slides.py` | Uses bleak + pynput; connects to sensor via Mac Bluetooth; presses right arrow key system-wide on "1"; works with any app in focus (Google Slides, Keynote, PowerPoint) |
+| Investigated Twilio SMS failure | — | Three failure modes found: (1) toll-free number format typo, (2) can't send from/to same number, (3) toll-free numbers blocked by US carriers without verification. Fix: buy local 10-digit Twilio number |
+| Cleared database | PostgreSQL | All tables wiped to resolve sensor pairing conflict between accounts |
+
+### Twilio Root Cause
+`+18339720819` is a toll-free number (1-833 prefix). US carriers block SMS from toll-free numbers without a separate verification process (enforced since 2023). Fix: purchase a regular local number from Twilio console (~$1.15/month) and update `TWILIO_PHONE_NUMBER` in `.env`.
+
+### Google Slides Setup
+```bash
+pip3 install bleak pynput
+python3 demov3/sensor_slides.py
+```
+macOS requires Accessibility permission for Terminal on first run (System Settings → Privacy & Security → Accessibility).
+
+### BLE Constraint
+Sensor can only hold one BLE connection. iPhone app must be fully closed before Chrome or the Python script can connect.
+
+---
+
+## Session Summary (2026-04-13) — demov2 Flappy Bird + demov3 Slideshow (initial)
+
+### What was done
+- Created `demov2/index.html`: Flappy Bird with BLE — tap = jump (later converted to Dino game)
+- Created `demov3/index.html`: HTML presentation controllable by sensor tap
+- Created `demov3/sensor_slides.py`: Python BLE → Google Slides controller
+
+---
+
+## Session Summary (2026-04-06) — Device Testing + Twilio Setup
+
+### What was done
+- Full device test session: registered account, paired sensor, added contacts, triggered alerts
+- Diagnosed Twilio failures (toll-free number, unverified numbers, same from/to)
+- Wireless Xcode documented as the cable-free build path
+- Updated IP to 10.75.155.52
+
+---
+
 ## Session Summary (2026-04-05) — CNN Training Pipeline + Arduino Firmware Added
 
 ### What was added

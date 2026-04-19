@@ -1,0 +1,589 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>SoleSignal — Presentation</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --scarlet: #CC0033;
+      --dark:    #0a0a0a;
+      --card:    #141414;
+      --border:  #2a2a2a;
+    }
+
+    body {
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      background: var(--dark);
+      color: #e0e0e0;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* ── Top bar ── */
+    #topbar {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      padding: 10px 20px;
+      background: var(--card);
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+      z-index: 10;
+    }
+
+    #topbar .brand {
+      font-size: 1rem;
+      font-weight: 700;
+      color: var(--scarlet);
+      letter-spacing: 0.06em;
+      white-space: nowrap;
+    }
+
+    /* connection status (compact, inline) */
+    .status-pill {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      background: #1a1a1a;
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 5px 12px;
+      font-size: 0.75rem;
+      color: #aaa;
+      white-space: nowrap;
+    }
+    .dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: #333;
+      flex-shrink: 0;
+      transition: background 0.3s;
+    }
+    .dot.green  { background: #22c55e; box-shadow: 0 0 6px #22c55e88; }
+    .dot.yellow { background: #eab308; box-shadow: 0 0 6px #eab30888; }
+    .dot.red    { background: #ef4444; box-shadow: 0 0 6px #ef444488; }
+
+    .topbar-btn {
+      padding: 5px 14px;
+      border: none; border-radius: 6px;
+      font-size: 0.75rem; font-weight: 600;
+      cursor: pointer; transition: opacity 0.2s;
+    }
+    .topbar-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+    #btn-scan { background: #2563eb; color: #fff; }
+    #btn-scan:not(:disabled):hover { background: #1d4ed8; }
+    #btn-disconnect { background: transparent; color: #ef4444; border: 1px solid #ef4444; }
+    #btn-disconnect:not(:disabled):hover { background: #2c1212; }
+
+    /* slide counter on right */
+    #slide-counter {
+      margin-left: auto;
+      font-size: 0.78rem;
+      color: #555;
+      white-space: nowrap;
+    }
+
+    /* ── Slide stage ── */
+    #stage {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 32px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .slide {
+      display: none;
+      width: 100%;
+      max-width: 860px;
+      aspect-ratio: 16 / 9;
+      border-radius: 12px;
+      padding: 60px 72px;
+      position: relative;
+      animation: fadeIn 0.35s ease;
+      flex-direction: column;
+      justify-content: center;
+    }
+    .slide.active { display: flex; }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateX(24px); }
+      to   { opacity: 1; transform: translateX(0); }
+    }
+
+    /* Slide themes */
+    .slide-dark {
+      background: linear-gradient(135deg, #0f0f1a 0%, #1a0a12 100%);
+      border: 1px solid #2a1520;
+    }
+    .slide-accent {
+      background: linear-gradient(135deg, #1a0008 0%, #2d0010 100%);
+      border: 1px solid #4a0018;
+    }
+    .slide-light {
+      background: linear-gradient(135deg, #141420 0%, #1a1a28 100%);
+      border: 1px solid var(--border);
+    }
+
+    /* Slide typography */
+    .slide-label {
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      letter-spacing: 0.18em;
+      color: var(--scarlet);
+      margin-bottom: 18px;
+      opacity: 0.8;
+    }
+    .slide-title {
+      font-size: 2.8rem;
+      font-weight: 800;
+      line-height: 1.1;
+      color: #fff;
+      margin-bottom: 20px;
+    }
+    .slide-title span { color: var(--scarlet); }
+    .slide-sub {
+      font-size: 1.05rem;
+      color: #999;
+      line-height: 1.6;
+      max-width: 560px;
+    }
+
+    /* bullet list */
+    .bullets {
+      list-style: none;
+      margin-top: 8px;
+    }
+    .bullets li {
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+      margin-bottom: 16px;
+      font-size: 1rem;
+      color: #ccc;
+      line-height: 1.4;
+    }
+    .bullets li::before {
+      content: '';
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      background: var(--scarlet);
+      margin-top: 7px;
+      flex-shrink: 0;
+    }
+    .bullets li strong { color: #fff; }
+
+    /* two-column layout */
+    .two-col {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 28px;
+      margin-top: 12px;
+    }
+    .col-card {
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.07);
+      border-radius: 10px;
+      padding: 22px;
+    }
+    .col-card h3 {
+      font-size: 0.78rem;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--scarlet);
+      margin-bottom: 12px;
+    }
+    .col-card p {
+      font-size: 0.88rem;
+      color: #bbb;
+      line-height: 1.55;
+    }
+
+    /* big stat */
+    .stat-row {
+      display: flex;
+      gap: 40px;
+      margin-top: 20px;
+    }
+    .stat { text-align: left; }
+    .stat .num {
+      font-size: 2.6rem;
+      font-weight: 800;
+      color: var(--scarlet);
+      line-height: 1;
+    }
+    .stat .lbl {
+      font-size: 0.78rem;
+      color: #666;
+      margin-top: 4px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    /* title slide logo */
+    .logo-mark {
+      width: 52px; height: 52px;
+      border-radius: 14px;
+      background: var(--scarlet);
+      display: flex; align-items: center; justify-content: center;
+      margin-bottom: 28px;
+      font-size: 1.6rem;
+    }
+
+    /* tag chips */
+    .tags { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 20px; }
+    .tag {
+      padding: 4px 12px;
+      border-radius: 20px;
+      font-size: 0.72rem;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+    }
+    .tag-red   { background: rgba(204,0,51,0.15); color: #ff4d6d; border: 1px solid rgba(204,0,51,0.3); }
+    .tag-blue  { background: rgba(37,99,235,0.15); color: #60a5fa; border: 1px solid rgba(37,99,235,0.3); }
+    .tag-green { background: rgba(34,197,94,0.15); color: #4ade80; border: 1px solid rgba(34,197,94,0.3); }
+    .tag-gray  { background: rgba(255,255,255,0.06); color: #aaa; border: 1px solid rgba(255,255,255,0.1); }
+
+    /* corner slide number */
+    .slide-num {
+      position: absolute;
+      bottom: 20px; right: 28px;
+      font-size: 0.65rem;
+      color: #333;
+      letter-spacing: 0.1em;
+    }
+
+    /* ── Bottom nav hint ── */
+    #nav-hint {
+      text-align: center;
+      padding: 10px;
+      font-size: 0.72rem;
+      color: #444;
+      letter-spacing: 0.06em;
+      flex-shrink: 0;
+      border-top: 1px solid #111;
+    }
+    #nav-hint span { color: #666; }
+
+    /* ── BLE log (hidden, small) ── */
+    #ble-log {
+      position: fixed;
+      bottom: 40px; right: 16px;
+      width: 280px;
+      background: rgba(10,10,10,0.92);
+      border: 1px solid #222;
+      border-radius: 8px;
+      padding: 10px;
+      font-family: 'SF Mono', monospace;
+      font-size: 0.68rem;
+      color: #555;
+      max-height: 120px;
+      overflow-y: auto;
+      display: none;
+    }
+    #ble-log.show { display: block; }
+    #ble-log .le { margin-bottom: 2px; }
+    #ble-log .le.ok   { color: #22c55e; }
+    #ble-log .le.warn { color: #eab308; }
+    #ble-log .le.err  { color: #ef4444; }
+    #ble-log .ts { color: #333; margin-right: 4px; }
+
+    /* tap flash */
+    #tap-flash {
+      position: fixed;
+      inset: 0;
+      background: rgba(204,0,51,0.08);
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.1s;
+    }
+    #tap-flash.flash { opacity: 1; }
+  </style>
+</head>
+<body>
+
+<!-- ── Top bar ── -->
+<div id="topbar">
+  <div class="brand">SoleSignal</div>
+
+  <div class="status-pill">
+    <div class="dot" id="dot-ble"></div>
+    <span id="txt-ble">Checking…</span>
+  </div>
+  <div class="status-pill">
+    <div class="dot" id="dot-conn"></div>
+    <span id="txt-conn">Disconnected</span>
+  </div>
+
+  <button class="topbar-btn" id="btn-scan">Connect Sensor</button>
+  <button class="topbar-btn" id="btn-disconnect" disabled>Disconnect</button>
+
+  <div id="slide-counter">1 / 6</div>
+</div>
+
+<!-- ── Slides ── -->
+<div id="stage">
+
+  <!-- Slide 1: Title -->
+  <div class="slide slide-accent active">
+    <div class="logo-mark">👟</div>
+    <div class="slide-label">Rutgers University · Senior Design 2026</div>
+    <div class="slide-title"><span>Sole</span>Signal</div>
+    <div class="slide-sub">A smart shoe insert that detects emergency gestures and automatically alerts your contacts — no hands required.</div>
+    <div class="tags">
+      <span class="tag tag-red">BLE Sensor</span>
+      <span class="tag tag-blue">CNN on-device</span>
+      <span class="tag tag-green">Twilio SMS</span>
+      <span class="tag tag-gray">React Native</span>
+    </div>
+    <div class="slide-num">01</div>
+  </div>
+
+  <!-- Slide 2: Problem -->
+  <div class="slide slide-dark">
+    <div class="slide-label">The Problem</div>
+    <div class="slide-title">Emergencies don't wait for<br>you to reach your <span>phone</span></div>
+    <ul class="bullets">
+      <li><strong>Falls and medical events</strong> often leave the person unable to reach their phone</li>
+      <li><strong>Existing solutions</strong> (panic buttons, wearables) require deliberate button presses on a device</li>
+      <li><strong>SoleSignal</strong> is built into your shoe — activated by a foot gesture, always accessible</li>
+    </ul>
+    <div class="slide-num">02</div>
+  </div>
+
+  <!-- Slide 3: How it works -->
+  <div class="slide slide-light">
+    <div class="slide-label">How It Works</div>
+    <div class="slide-title">From <span>tap</span> to alert<br>in seconds</div>
+    <div class="two-col">
+      <div class="col-card">
+        <h3>Hardware</h3>
+        <p>FSR 402 pressure sensors embedded in the insole. nRF52840 microcontroller reads A0 + A2 at 20Hz and runs a 1D CNN to classify the tap gesture.</p>
+      </div>
+      <div class="col-card">
+        <h3>Software</h3>
+        <p>Confirmed gesture → BLE notification → iOS app → GPS location → POST /alerts → Twilio SMS to emergency contact within seconds.</p>
+      </div>
+    </div>
+    <div class="slide-num">03</div>
+  </div>
+
+  <!-- Slide 4: ML -->
+  <div class="slide slide-dark">
+    <div class="slide-label">Machine Learning</div>
+    <div class="slide-title">On-device <span>CNN</span><br>— no cloud required</div>
+    <ul class="bullets">
+      <li><strong>1D Convolutional Neural Network</strong> trained on 2-channel pressure time-series (A0 + A2)</li>
+      <li><strong>Sliding window inference</strong> — 50 samples at 20Hz = 2.5 seconds of context per decision</li>
+      <li><strong>3-vote majority</strong> — three consecutive confident windows required to trigger, preventing false alarms</li>
+      <li><strong>TFLite model</strong> runs entirely on the nRF52840 — under 100KB, no internet needed</li>
+    </ul>
+    <div class="slide-num">04</div>
+  </div>
+
+  <!-- Slide 5: Stack -->
+  <div class="slide slide-light">
+    <div class="slide-label">Tech Stack</div>
+    <div class="slide-title">Full-stack from<br><span>firmware</span> to cloud</div>
+    <div class="two-col">
+      <div class="col-card">
+        <h3>Hardware / Firmware</h3>
+        <p>nRF52840 · Arduino + ArduTFLite · FSR 402 sensors · BLE GATT characteristic</p>
+      </div>
+      <div class="col-card">
+        <h3>Mobile</h3>
+        <p>React Native 0.84 (iOS) · react-native-ble-plx · iOS Keychain · Geolocation</p>
+      </div>
+      <div class="col-card">
+        <h3>Backend</h3>
+        <p>Node.js 20 · Express · TypeScript · Prisma ORM · PostgreSQL 14 · Docker</p>
+      </div>
+      <div class="col-card">
+        <h3>Alert Delivery</h3>
+        <p>Twilio SMS · 3-retry logic · GPS coordinates · JWT authentication</p>
+      </div>
+    </div>
+    <div class="slide-num">05</div>
+  </div>
+
+  <!-- Slide 6: Stats / closing -->
+  <div class="slide slide-accent">
+    <div class="slide-label">Project Status</div>
+    <div class="slide-title">End-to-end<br><span>confirmed</span> working</div>
+    <div class="stat-row">
+      <div class="stat">
+        <div class="num">14</div>
+        <div class="lbl">API Endpoints</div>
+      </div>
+      <div class="stat">
+        <div class="num">45</div>
+        <div class="lbl">Passing Tests</div>
+      </div>
+      <div class="stat">
+        <div class="num">&lt;3s</div>
+        <div class="lbl">Alert Latency</div>
+      </div>
+      <div class="stat">
+        <div class="num">100KB</div>
+        <div class="lbl">CNN Model Size</div>
+      </div>
+    </div>
+    <div class="slide-sub" style="margin-top:24px">BLE pairing · tap detection · GPS · Twilio SMS · all confirmed on physical device.</div>
+    <div class="slide-num">06</div>
+  </div>
+
+</div>
+
+<!-- ── Nav hint ── -->
+<div id="nav-hint">
+  <span>Step on sensor</span> to advance &nbsp;·&nbsp; <span>← →</span> arrow keys &nbsp;·&nbsp; <span>Space</span> to advance
+</div>
+
+<!-- Flash overlay -->
+<div id="tap-flash"></div>
+
+<!-- BLE log (bottom-right) -->
+<div id="ble-log"></div>
+
+<script>
+  // ── Slides ──────────────────────────────────────────────────
+  const slides  = Array.from(document.querySelectorAll('.slide'));
+  const counter = document.getElementById('slide-counter');
+  let current   = 0;
+
+  function goTo(n) {
+    if (n < 0 || n >= slides.length) return;
+    slides[current].classList.remove('active');
+    current = n;
+    slides[current].classList.add('active');
+    counter.textContent = `${current + 1} / ${slides.length}`;
+
+    // flash
+    const flash = document.getElementById('tap-flash');
+    flash.classList.add('flash');
+    setTimeout(() => flash.classList.remove('flash'), 120);
+  }
+
+  function next() { goTo(current + 1); }
+  function prev() { goTo(current - 1); }
+
+  document.addEventListener('keydown', e => {
+    if (e.code === 'Space' || e.code === 'ArrowRight') { e.preventDefault(); next(); }
+    if (e.code === 'ArrowLeft') { e.preventDefault(); prev(); }
+  });
+
+  // ── BLE ─────────────────────────────────────────────────────
+  const SERVICE_UUID        = "12345678-1234-1234-1234-1234567890ab";
+  const CHARACTERISTIC_UUID = "99999999-8888-7777-6666-555555555555";
+
+  let bleDevice = null;
+  let bleChar   = null;
+
+  const dotBle  = document.getElementById('dot-ble');
+  const txtBle  = document.getElementById('txt-ble');
+  const dotConn = document.getElementById('dot-conn');
+  const txtConn = document.getElementById('txt-conn');
+  const btnScan = document.getElementById('btn-scan');
+  const btnDisc = document.getElementById('btn-disconnect');
+  const bleLog  = document.getElementById('ble-log');
+
+  function log(msg, level = 'info') {
+    bleLog.classList.add('show');
+    const ts  = new Date().toLocaleTimeString('en-US', { hour12: false });
+    const div = document.createElement('div');
+    div.className = `le ${level}`;
+    div.innerHTML = `<span class="ts">${ts}</span>${msg}`;
+    bleLog.appendChild(div);
+    bleLog.scrollTop = bleLog.scrollHeight;
+    // keep last 30 lines
+    while (bleLog.children.length > 30) bleLog.removeChild(bleLog.firstChild);
+  }
+
+  async function checkBluetooth() {
+    if (!navigator.bluetooth) {
+      dotBle.className = 'dot red';
+      txtBle.textContent = 'Web Bluetooth not supported (use Chrome)';
+      btnScan.disabled = true;
+      return false;
+    }
+    const available = await navigator.bluetooth.getAvailability();
+    if (!available) {
+      dotBle.className = 'dot red';
+      txtBle.textContent = 'Bluetooth off';
+      btnScan.disabled = true;
+      return false;
+    }
+    dotBle.className = 'dot green';
+    txtBle.textContent = 'Bluetooth ready';
+    return true;
+  }
+
+  async function connect() {
+    btnScan.disabled = true;
+    log('Opening BLE picker…');
+    try {
+      bleDevice = await navigator.bluetooth.requestDevice({
+        filters: [{ services: [SERVICE_UUID] }],
+        optionalServices: [SERVICE_UUID],
+      });
+      bleDevice.addEventListener('gattserverdisconnected', onDisconnected);
+      dotConn.className = 'dot yellow';
+      txtConn.textContent = 'Connecting…';
+
+      const server  = await bleDevice.gatt.connect();
+      const service = await server.getPrimaryService(SERVICE_UUID);
+      bleChar        = await service.getCharacteristic(CHARACTERISTIC_UUID);
+      await bleChar.startNotifications();
+      bleChar.addEventListener('characteristicvaluechanged', onData);
+
+      dotConn.className = 'dot green';
+      txtConn.textContent = bleDevice.name || bleDevice.id;
+      btnDisc.disabled = false;
+      log(`Connected: ${bleDevice.name || bleDevice.id}`, 'ok');
+    } catch (err) {
+      log(`Failed: ${err.message}`, 'err');
+      dotConn.className = 'dot red';
+      txtConn.textContent = 'Connection failed';
+      btnScan.disabled = false;
+    }
+  }
+
+  function onData(event) {
+    const value = new TextDecoder().decode(event.target.value).trim();
+    if (value === '1') {
+      log('Step → next slide', 'ok');
+      next();
+    } else {
+      log(`rx: "${value}"`);
+    }
+  }
+
+  function onDisconnected() {
+    dotConn.className = 'dot red';
+    txtConn.textContent = 'Disconnected';
+    btnScan.disabled = false;
+    btnDisc.disabled = true;
+    bleChar = null;
+    log('Disconnected', 'warn');
+  }
+
+  async function disconnect() {
+    if (bleChar) try { await bleChar.stopNotifications(); } catch (_) {}
+    if (bleDevice?.gatt.connected) bleDevice.gatt.disconnect();
+  }
+
+  btnScan.addEventListener('click', async () => {
+    if (await checkBluetooth()) await connect();
+  });
+  btnDisc.addEventListener('click', disconnect);
+
+  checkBluetooth();
+</script>
+</body>
+</html>
