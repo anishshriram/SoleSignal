@@ -5,7 +5,7 @@
 //
 // Emergency contacts are the people who receive an SMS when the user triggers an alert.
 // Each contact is linked to a specific user (user_id foreign key) and has a phone number
-// that Twilio will SMS in the POST /alerts flow.
+// that Textbelt will SMS in the POST /alerts flow.
 
 import express from 'express';
 import { PrismaClient } from '@prisma/client';
@@ -33,7 +33,7 @@ router.post('/', authenticateToken, async (req, res) => {
     if (!name || !phone_number) {
       return res.status(400).json({ error: 'Name and phone_number are required' });
     }
-    // Validate phone format before inserting — Twilio will reject malformed numbers anyway
+    // Validate phone format before inserting — Textbelt requires E.164 format
     if (!phoneRegex.test(phone_number)) {
       return res.status(400).json({ error: 'Phone number format is invalid' });
     }

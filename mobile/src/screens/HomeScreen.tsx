@@ -85,6 +85,13 @@ export default function HomeScreen({ navigation }: Props) {
   // reconnectAttempted ensures auto-reconnect only runs once per app session (not on every focus)
   const reconnectAttempted = useRef(false);
 
+  // Countdown state for the 10-second cancel window shown before every alert dispatch
+  const [alertCountdown, setAlertCountdown] = useState<number | null>(null);
+  const countdownTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const pendingAlertManualRef = useRef(false);
+  // dispatchAlertRef always points to the latest dispatchAlert — avoids stale closure in setInterval
+  const dispatchAlertRef = useRef<(isManual?: boolean) => void>(() => {});
+
   // addLog — appends a timestamped entry to the event log.
   // Keeps the last 100 entries (slice(-99) + new entry = 100 max).
   // Auto-scrolls the list to the bottom after each entry.
@@ -134,8 +141,8 @@ export default function HomeScreen({ navigation }: Props) {
       connectedDevice,
       () => {
         if (!alertInProgress.current) {
-          addLog('Tap pattern detected — triggering alert', 'warn');
-          handleAutoAlert();
+          addLog('Tap pattern detected — starting alert countdown', 'warn');
+          startAlertCountdown(false);
         }
       },
       (value) => {
@@ -268,13 +275,9 @@ export default function HomeScreen({ navigation }: Props) {
   const dispatchAlert = async (isManual = false) => {
     if (alertInProgress.current) return; // prevent duplicate concurrent alerts
     if (!resolvedSensorDbId || !contactId) {
-      if (isManual) {
-        // Only show the "not ready" dialog when the user explicitly pressed the button
-        Alert.alert(
-          'Not ready',
-          'Make sure your sensor is paired and you have at least one emergency contact.',
-        );
-      }
+      const reason = 'Make sure your sensor is paired and you have at least one emergency contact.';
+      addLog(`Alert failed: sensor or contact not ready`, 'error');
+      Alert.alert('Not ready', reason);
       return;
     }
 
@@ -318,14 +321,41 @@ export default function HomeScreen({ navigation }: Props) {
     }
   };
 
-  // handleAutoAlert — called by the BLE tap monitor when firmware sends "1".
-  // Shows a non-dismissable alert dialog before dispatching so the user knows it was triggered.
-  const handleAutoAlert = () => {
-    Alert.alert('Tap pattern detected', 'Sending emergency alert…', [{ text: 'OK' }], {
-      cancelable: false,
-    });
-    dispatchAlert(); // isManual defaults to false
-  };
+  // Keep dispatchAlertRef pointing to the latest dispatchAlert on every render
+  // so the setInterval callback always calls the up-to-date version.
+  useEffect(() => {
+    dispatchAlertRef.current = dispatchAlert;
+  });
+
+  // startAlertCountdown — begins the 10-second cancel window before dispatching an alert.
+  // Used for both BLE tap triggers and the manual SEND ALERT button.
+  const startAlertCountdown = useCallback((isManual: boolean) => {
+    if (alertCountdown !== null) return; // already counting down
+    pendingAlertManualRef.current = isManual;
+    setAlertCountdown(10);
+    let count = 10;
+    countdownTimerRef.current = setInterval(() => {
+      count -= 1;
+      if (count <= 0) {
+        clearInterval(countdownTimerRef.current!);
+        countdownTimerRef.current = null;
+        setAlertCountdown(null);
+        dispatchAlertRef.current(pendingAlertManualRef.current); // use ref — never stale
+      } else {
+        setAlertCountdown(count);
+      }
+    }, 1000);
+  }, [alertCountdown]);
+
+  // cancelCountdown — cancels the pending alert before it dispatches.
+  const cancelCountdown = useCallback(() => {
+    if (countdownTimerRef.current) {
+      clearInterval(countdownTimerRef.current);
+      countdownTimerRef.current = null;
+    }
+    setAlertCountdown(null);
+    addLog('Alert cancelled', 'warn');
+  }, [addLog]);
 
   // handleUnpair — confirmation dialog before calling DELETE /sensors/me.
   // Clears BLEContext state and resets paired/connected UI indicators.
@@ -341,6 +371,9 @@ export default function HomeScreen({ navigation }: Props) {
           onPress: async () => {
             try {
               await unpairSensor(); // DELETE /sensors/me — cascade-deletes alert records too
+              if (connectedDevice) {
+                try { await bleService.disconnect(connectedDevice.id); } catch {}
+              }
               clearBLEState();
               setSensorPaired(false);
               setResolvedSensorDbId(null);
@@ -460,10 +493,21 @@ export default function HomeScreen({ navigation }: Props) {
         />
       </View>
 
+      {/* Countdown cancel overlay — shown for 10 seconds after alert is triggered */}
+      {alertCountdown !== null && (
+        <View style={styles.countdownOverlay}>
+          <Text style={styles.countdownLabel}>ALERT SENDING IN</Text>
+          <Text style={styles.countdownNumber}>{alertCountdown}</Text>
+          <TouchableOpacity style={styles.cancelAlertButton} onPress={cancelCountdown}>
+            <Text style={styles.cancelAlertText}>CANCEL</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
       {/* Alert button */}
       <TouchableOpacity
         style={styles.alertButton}
-        onPress={() => dispatchAlert(true)}>
+        onPress={() => startAlertCountdown(true)}>
         <Text style={styles.alertButtonText}>SEND ALERT</Text>
       </TouchableOpacity>
       <Text style={styles.alertHint}>
@@ -574,6 +618,51 @@ const styles = StyleSheet.create({
     color: '#374151',
     fontFamily: 'Menlo',
     fontSize: 11,
+  },
+
+  // Countdown overlay
+  countdownOverlay: {
+    position: 'absolute',
+    bottom: 120,
+    left: Spacing.lg,
+    right: Spacing.lg,
+    backgroundColor: '#1a1a1a',
+    borderRadius: 16,
+    padding: Spacing.lg,
+    alignItems: 'center',
+    zIndex: 100,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.4,
+    shadowRadius: 8,
+    elevation: 10,
+  },
+  countdownLabel: {
+    color: '#9ca3af',
+    fontSize: 11,
+    letterSpacing: 2,
+    fontWeight: '600',
+    marginBottom: 4,
+  },
+  countdownNumber: {
+    color: Colors.white,
+    fontSize: 56,
+    fontWeight: '700',
+    lineHeight: 64,
+  },
+  cancelAlertButton: {
+    marginTop: Spacing.md,
+    borderWidth: 2,
+    borderColor: '#ef4444',
+    borderRadius: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 40,
+  },
+  cancelAlertText: {
+    color: '#ef4444',
+    fontSize: 15,
+    fontWeight: '700',
+    letterSpacing: 1,
   },
 
   // Alert button

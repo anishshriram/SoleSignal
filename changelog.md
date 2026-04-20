@@ -43,7 +43,7 @@ Build the SoleSignal MVP backend and mobile app. The backend is a REST API (Node
 - [x] `GET /contacts` — getContacts() — returns `{ contacts: [...] }`
 - [x] `PATCH /contacts/{id}` — updateContact()
 - [x] `DELETE /contacts/{id}` — deleteContact()
-- [x] `POST /alerts` — sendAlert() — Twilio SMS with up to 3 retries (NFR-5); delivery_status set to `delivered` or `failed`
+- [x] `POST /alerts` — sendAlert() — Textbelt SMS with up to 3 retries (NFR-5); delivery_status set to `delivered` or `failed`
 - [x] `GET /alerts/{id}` — getAlertStatus()
 - [x] `DELETE /sensors/me` — unpairSensor() — added post-spec (not in original PDF)
 
@@ -73,8 +73,11 @@ Build the SoleSignal MVP backend and mobile app. The backend is a REST API (Node
 - [x] Event log on Home screen — scrolling, timestamped, color-coded (styled after ble_demo.html)
 - [x] Reconnect button on Home screen — shown when paired but not connected this session
 - [x] Auto-reconnect on app load — silently attempts BLE reconnect on startup if sensor is paired in DB
-- [x] Unpair button on Home screen — confirmation dialog, calls DELETE /sensors/me
+- [x] Unpair button on Home screen — confirmation dialog, BLE disconnect + DELETE /sensors/me
 - [x] Vibration on alert dispatch — `[0, 500, 200, 500]` pattern
+- [x] 10-second cancel countdown overlay — shown for both tap and manual alert triggers
+- [x] Alert dispatch stale closure fixed — `dispatchAlertRef` pattern ensures setInterval always calls latest function
+- [x] Reverse geocoding — Nominatim (OpenStreetMap) converts GPS to human-readable address in SMS
 
 **Platform:** iOS only (bare React Native CLI, tested via Xcode on personal device)
 **Theme:** Scarlet `#CC0033` / Black `#000000` / White `#FFFFFF` (Rutgers University)
@@ -162,7 +165,7 @@ echo "http://$(ipconfig getifaddr en0):3000/"
 
 ## Progress Percentage
 
-**100%** — All stages complete. Backend, mobile app, BLE, Twilio SMS, tests, ER diagram, and Docker deployment all done.
+**100%** — All stages complete. Backend, mobile app, BLE, Textbelt SMS, tests, ER diagram, and Docker deployment all done.
 
 ---
 
@@ -343,6 +346,131 @@ This overwrites `SoleSignal_ER_Diagram.png` in place.
 
 ---
 
+## Session Summary (2026-04-20) — Full End-to-End Run + Alert Dispatch Fixes + Geocoding
+
+### What was confirmed working (first full successful end-to-end run)
+
+| Feature | Status | Notes |
+|---------|--------|-------|
+| Backend startup | ✅ | `npm run dev` on Node 20, PostgreSQL via Homebrew |
+| Metro bundler | ✅ | Required Node 20 (`nvm use 20`) — `toReversed` error on Node 18 |
+| Xcode build + deploy | ✅ | Cable deploy to iPhone 16 Pro Max (iOS 26.3.1) via Xcode 26.4 |
+| Register / Login | ✅ | JWT stored in iOS Keychain |
+| Sensor pairing (BLE) | ✅ | Scan → connect → POST /sensors/pair |
+| BLE tap detection | ✅ | `"1"` received → countdown starts |
+| 10-second cancel window | ✅ | Overlay shown, CANCEL button dismisses it without sending |
+| Alert dispatch (tap-triggered) | ✅ | Countdown completes → POST /alerts → SMS sent |
+| Alert dispatch (manual button) | ✅ | Same countdown flow |
+| SMS delivery via Textbelt | ✅ | Message received on emergency contact phone |
+| Reverse geocoding | ✅ | Address shown in SMS instead of raw GPS coords |
+| Contacts screen | ✅ | Add / edit / delete working |
+| AlertSent screen | ✅ | Shows alert ID after dispatch |
+
+### SMS received (confirmed format after geocoding fix):
+```
+EMERGENCY ALERT from [Name]. Location: [Street Address, City, State, ZIP, Country]. Time: [ISO timestamp]
+```
+
+---
+
+### Bugs fixed this session
+
+#### Bug 1 — Tap pattern detected but alert never sent (stale closure)
+**Symptom:** BLE tap triggered the countdown UI but alert never dispatched after countdown ended.
+**Root cause:** `startAlertCountdown` was wrapped in `useCallback([alertCountdown])`. The `dispatchAlert` function captured inside the `setInterval` callback was a stale closure — it referenced the version of `dispatchAlert` from when the countdown started, which had stale `resolvedSensorDbId` and `contactId` values. The function silently returned early because `isManual=false` suppressed the error alert.
+**Fix:**
+- Added `dispatchAlertRef = useRef()` that is updated on every render via `useEffect(() => { dispatchAlertRef.current = dispatchAlert; })`
+- The `setInterval` callback now calls `dispatchAlertRef.current(...)` — always the latest version
+- Changed `dispatchAlert` to always show an error (not just when `isManual=true`) so failures are visible in the event log
+**File:** `mobile/src/screens/HomeScreen.tsx`
+
+#### Bug 2 — No way to cancel an alert after triggering
+**Symptom:** Once SEND ALERT or a tap was triggered, the alert dispatched immediately with no cancel window.
+**Fix:** Added a 10-second countdown overlay that appears for BOTH tap triggers and manual button presses:
+- `alertCountdown` state (null | number) controls overlay visibility
+- `countdownTimerRef` holds the `setInterval` reference
+- `startAlertCountdown(isManual)` — starts countdown, both paths go through this
+- `cancelCountdown()` — clears interval, resets state, logs "Alert cancelled"
+- Countdown overlay: dark background, large countdown number (56px), red CANCEL button
+- After countdown hits 0: `dispatchAlertRef.current()` fires
+- Replaced old `handleAutoAlert()` popup with this flow
+**File:** `mobile/src/screens/HomeScreen.tsx`
+
+#### Bug 3 — GPS coordinates in SMS instead of address
+**Symptom:** SMS read `GPS: 40.12345, -74.12345` — functionally useless to a recipient.
+**Fix:** Added `reverseGeocode()` function to backend using Nominatim (OpenStreetMap):
+- Free, no API key required
+- Nominatim usage policy requires a descriptive `User-Agent` header
+- Returns `display_name` field (full address string)
+- Falls back to raw GPS coordinates if geocoding fails (network issue, no response)
+- SMS now reads: `Location: 123 Main St, City, State ZIP, Country`
+- Removed `Sensor: ${sensor.sensor_id}` from SMS (irrelevant to recipient)
+**File:** `backend/routes/alerts.ts`
+
+#### Bug 4 — Unpair then re-scan: sensor not found
+**Symptom:** After unpairing a sensor, scanning found nothing.
+**Root cause (software):** `handleUnpair` called `clearBLEState()` without first disconnecting the BLE connection. The ESP32 still thought it was connected and stopped advertising.
+**Fix (software):** Added `bleService.disconnect(connectedDevice.id)` before `clearBLEState()` in the unpair handler.
+**Note:** A hardware-side fix was also applied that resolved this independently. Both fixes are in place.
+**File:** `mobile/src/screens/HomeScreen.tsx`
+
+#### Bug 5 — Metro bundler crashed with `toReversed is not a function`
+**Symptom:** `npx react-native start` crashed immediately.
+**Root cause:** Node 18 — `Array.prototype.toReversed()` requires Node 20.
+**Fix:** `nvm install 20 && nvm use 20` before starting Metro.
+
+#### Bug 6 — Backend running with old code after edits (geocoding not applied)
+**Symptom:** First alert after geocoding change still used old SMS format with `Sensor:` field.
+**Root cause:** Backend was not restarted after the `alerts.ts` edit.
+**Fix:** Always restart `npm run dev` after backend changes.
+
+---
+
+### Files changed this session
+
+| File | Change |
+|------|--------|
+| `mobile/src/screens/HomeScreen.tsx` | Added countdown overlay, `dispatchAlertRef`, BLE disconnect on unpair, removed `handleAutoAlert` |
+| `backend/routes/alerts.ts` | Added `reverseGeocode()` using Nominatim, updated SMS body format |
+
+---
+
+## Session Summary (2026-04-20) — demov2 BLE Protocol Update + Alert Cancel Feature
+
+### demov2 changes
+| Change | Notes |
+|--------|-------|
+| BLE protocol updated to match `demo_game-4.ino` | Replaced `"1"` trigger with 2-char protocol: `"00"` idle, `"01"` running/start, `"10"` pause, `"11"` jump |
+| BLE filter changed to name-based | `filters: [{ name: "SoleSignal_Game" }]` — 128-bit UUID overflows ESP32 ad packet into scan response which Web Bluetooth ignores |
+| GATT reconnect logic added | Extracted `connectGATT()` — auto-reconnects on drop without requiring re-scan |
+| Game start/pause/resume wired to protocol | `"01"` → start/resume, `"10"` → pause, `"11"` → jump |
+| Death cooldown added | 3s grace period after death before restart is accepted |
+| Death restart | After cooldown, either toe hold (`"11"`) or heel hold (`"10"`) restarts the game |
+| Obstacle gap increased | 280–480px → 500–700px (one obstacle at a time) |
+| Speed reduced | Base 4 → 3 px/frame, ramp slowed |
+
+### Arduino files
+| File | Status |
+|------|--------|
+| `demo_game.ino` | Original — Serial only, no BLE |
+| `demo_game-2.ino` | Added native BLE, explicit ad packet fix for UUID filtering |
+| `demo_game-3.ino` | Added heartbeat, release gate, reduced hold times to 0.5s |
+| `demo_game-4.ino` | Current — release gate removed, everything else same as v3 |
+
+### Next: Alert cancel feature
+10-second cancellation window after an alert is staged to send in the mobile app.
+
+### Twilio → Textbelt migration
+| What | Detail |
+|------|--------|
+| Root cause | Twilio toll-free number blocked by US carriers without verification; local 10DLC number blocked without A2P 10DLC brand+campaign registration |
+| Replacement | Textbelt — no carrier registration, pay-per-text (~$0.01/text), paid API key |
+| Files changed | `backend/routes/alerts.ts`, `backend/routes/contacts.ts`, `mobile/src/services/api.ts`, `docker-compose.yml`, `.env.example`, `documentation/CONTEXT.md`, `documentation/Master_Document_Update_Guide.md`, `demov3/index.html` |
+| `twilio` npm package | Remove with `npm uninstall twilio` from `backend/` |
+| New env var | `TEXTBELT_KEY` in `backend/.env` |
+
+---
+
 ## Session Summary (2026-04-19) — Dino Game + Google Slides Controller + Twilio Investigation
 
 ### What was done
@@ -484,5 +612,5 @@ The following items were implemented during development but are **not reflected 
 - **JWT:** 24hr expiry, no refresh token, stateless logout (client deletes token)
 - **Ownership:** `user_id` always extracted from JWT token, never from request body
 - **Password:** bcryptjs (cross-platform), minimum 8 characters per spec
-- **SMS:** Twilio API (only external API used in MVP)
+- **SMS:** Textbelt API (replaced Twilio — see session summary 2026-04-20)
 - **Type safety:** `@types/*` packages installed; Express Request extended via `types/express.d.ts`

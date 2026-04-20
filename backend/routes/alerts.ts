@@ -8,55 +8,58 @@
 //   2. App calls POST /alerts with sensor_id (DB primary key), contact_id, and optional GPS
 //   3. Server validates sensor ownership + calibration state + contact ownership
 //   4. Server creates an alert DB record with status "pending"
-//   5. Server calls Twilio to SMS the emergency contact (up to 3 attempts)
+//   5. Server calls Textbelt to SMS the emergency contact (up to 3 attempts)
 //   6. Server updates the alert record to "delivered" or "failed"
 //   7. Mobile app can poll GET /alerts/:id to confirm delivery
 
 import express from 'express';
-import twilio from 'twilio';
 import { PrismaClient } from '@prisma/client';
 import { authenticateToken } from '../middleware/auth.js';
 
 const router = express.Router();
 const prisma = new PrismaClient();
 
-// Maximum number of Twilio SMS delivery attempts before marking the alert as failed
 const MAX_RETRIES = 3;
 
-/**
- * sendSMS — Internal helper that calls the Twilio API to send an SMS.
- * Retries up to MAX_RETRIES times on failure (NFR-5 requirement).
- * The Twilio client is created fresh per-call — this is intentional; environment
- * variables may not be available at module load time in all deployment contexts.
- *
- * @param to   - Recipient phone number (e.g. "+14155550100")
- * @param body - SMS message text
- * @throws     - Rethrows the last error if all attempts fail
- */
-async function sendSMS(to: string, body: string): Promise<void> {
-  // Initialize Twilio client using credentials from environment variables
-  // TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN are set in .env / docker-compose
-  const client = twilio(
-    process.env.TWILIO_ACCOUNT_SID,
-    process.env.TWILIO_AUTH_TOKEN,
-  );
+// Nominatim reverse geocoding — converts GPS coordinates to a human-readable address.
+// Free, no API key required. Nominatim policy requires a descriptive User-Agent header.
+async function reverseGeocode(lat: number, lon: number): Promise<string | null> {
+  try {
+    const res = await fetch(
+      `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json`,
+      { headers: { 'User-Agent': 'SoleSignal Emergency Alert App/1.0' } },
+    );
+    const data = await res.json() as { display_name?: string };
+    return data.display_name ?? null;
+  } catch {
+    return null;
+  }
+}
 
+// Textbelt SMS helper — uses Node 20 native fetch, no SDK needed.
+// POST https://textbelt.com/text with phone, message, key.
+async function sendSMS(to: string, body: string): Promise<void> {
   let lastError: unknown;
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     try {
-      await client.messages.create({
-        body,
-        from: process.env.TWILIO_PHONE_NUMBER, // The Twilio number we own (set in .env)
-        to,
+      const res = await fetch('https://textbelt.com/text', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          phone: to,
+          message: body,
+          key: process.env.TEXTBELT_KEY,
+        }),
       });
-      return; // SMS sent successfully — exit the retry loop
+      const data = await res.json() as { success: boolean; quotaRemaining?: number; textId?: string; error?: string };
+      if (!data.success) throw new Error(data.error ?? 'Textbelt error');
+      console.log(`SMS sent. textId=${data.textId} quotaRemaining=${data.quotaRemaining}`);
+      return;
     } catch (err) {
       lastError = err;
-      console.error(`Twilio attempt ${attempt}/${MAX_RETRIES} failed:`, err);
-      // If there are retries remaining, the loop continues automatically
+      console.error(`Textbelt attempt ${attempt}/${MAX_RETRIES} failed:`, err);
     }
   }
-  // All attempts exhausted — throw so the caller can mark the alert as failed
   throw lastError;
 }
 
@@ -72,7 +75,7 @@ async function sendSMS(to: string, body: string): Promise<void> {
  *   - location_available (boolean): whether the app was able to get GPS coordinates
  *
  * Returns: { message, alert_id, delivery_status }
- *   - delivery_status: "delivered" if Twilio succeeded, "failed" if all retries exhausted
+ *   - delivery_status: "delivered" if Textbelt succeeded, "failed" if all retries exhausted
  *   - Note: returns 201 even on SMS failure — the alert DB record was still created
  */
 router.post('/', authenticateToken, async (req, res) => {
@@ -125,12 +128,17 @@ router.post('/', authenticateToken, async (req, res) => {
       },
     });
 
-    // Build the SMS message text
-    // Location formatted to 5 decimal places (~1 meter precision)
-    const locationText = location_available
-      ? `GPS: ${parseFloat(gps_latitude).toFixed(5)}, ${parseFloat(gps_longitude).toFixed(5)}`
-      : 'Location unavailable';
-    const smsBody = `EMERGENCY ALERT from ${user!.name}. ${locationText}. Sensor: ${sensor.sensor_id}. Time: ${new Date().toISOString()}`;
+    // Build the SMS message text — reverse geocode if GPS is available
+    let locationText: string;
+    if (location_available) {
+      const address = await reverseGeocode(parseFloat(gps_latitude), parseFloat(gps_longitude));
+      locationText = address
+        ? `Location: ${address}`
+        : `GPS: ${parseFloat(gps_latitude).toFixed(5)}, ${parseFloat(gps_longitude).toFixed(5)}`;
+    } else {
+      locationText = 'Location unavailable';
+    }
+    const smsBody = `EMERGENCY ALERT from ${user!.name}. ${locationText}. Time: ${new Date().toISOString()}`;
 
     // Attempt SMS delivery with retry logic — up to MAX_RETRIES (3) attempts
     try {
@@ -197,7 +205,7 @@ router.get('/:id', authenticateToken, async (req, res) => {
     res.status(200).json({
       alert_id: alert.id,
       delivery_status: alert.delivery_status, // "pending" | "delivered" | "failed"
-      retry_count: alert.retry_count,          // how many Twilio send attempts were made
+      retry_count: alert.retry_count,          // how many Textbelt send attempts were made
       timestamp: alert.timestamp,              // when the alert was originally created
     });
   } catch (error) {

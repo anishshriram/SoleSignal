@@ -339,7 +339,7 @@
     <div class="tags">
       <span class="tag tag-red">BLE Sensor</span>
       <span class="tag tag-blue">CNN on-device</span>
-      <span class="tag tag-green">Twilio SMS</span>
+      <span class="tag tag-green">Textbelt SMS</span>
       <span class="tag tag-gray">React Native</span>
     </div>
     <div class="slide-num">01</div>
@@ -368,7 +368,7 @@
       </div>
       <div class="col-card">
         <h3>Software</h3>
-        <p>Confirmed gesture → BLE notification → iOS app → GPS location → POST /alerts → Twilio SMS to emergency contact within seconds.</p>
+        <p>Confirmed gesture → BLE notification → iOS app → GPS location → POST /alerts → Textbelt SMS to emergency contact within seconds.</p>
       </div>
     </div>
     <div class="slide-num">03</div>
@@ -406,7 +406,7 @@
       </div>
       <div class="col-card">
         <h3>Alert Delivery</h3>
-        <p>Twilio SMS · 3-retry logic · GPS coordinates · JWT authentication</p>
+        <p>Textbelt SMS · 3-retry logic · GPS coordinates · JWT authentication</p>
       </div>
     </div>
     <div class="slide-num">05</div>
@@ -434,7 +434,7 @@
         <div class="lbl">CNN Model Size</div>
       </div>
     </div>
-    <div class="slide-sub" style="margin-top:24px">BLE pairing · tap detection · GPS · Twilio SMS · all confirmed on physical device.</div>
+    <div class="slide-sub" style="margin-top:24px">BLE pairing · tap detection · GPS · Textbelt SMS · all confirmed on physical device.</div>
     <div class="slide-num">06</div>
   </div>
 
@@ -442,7 +442,7 @@
 
 <!-- ── Nav hint ── -->
 <div id="nav-hint">
-  <span>Step on sensor</span> to advance &nbsp;·&nbsp; <span>← →</span> arrow keys &nbsp;·&nbsp; <span>Space</span> to advance
+  <span>Toe 1.5s</span> = next &nbsp;·&nbsp; <span>Heel 1.5s</span> = back &nbsp;·&nbsp; <span>Both 3s</span> = next &nbsp;·&nbsp; <span>← →</span> arrow keys &nbsp;·&nbsp; <span>Space</span> to advance
 </div>
 
 <!-- Flash overlay -->
@@ -556,9 +556,17 @@
 
   function onData(event) {
     const value = new TextDecoder().decode(event.target.value).trim();
-    if (value === '1') {
-      log('Step → next slide', 'ok');
+    if (value === '00') {
+      // idle heartbeat — no action
+    } else if (value === '01') {
+      log('Both sensors held → next slide', 'ok');
       next();
+    } else if (value === '11') {
+      log('Toe held → next slide', 'ok');
+      next();
+    } else if (value === '10') {
+      log('Heel held → previous slide', 'warn');
+      prev();
     } else {
       log(`rx: "${value}"`);
     }

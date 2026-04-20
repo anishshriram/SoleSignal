@@ -68,7 +68,7 @@ exactly five things in order:
 
 | Layer | Decision |
 |-------|----------|
-| Alert delivery | Twilio API (SMS) |
+| Alert delivery | Textbelt API (SMS) |
 | Database | PostgreSQL (Prisma ORM) — local via Homebrew for dev, matches PDF spec |
 | Authentication | JWT (JSON Web Tokens), 24hr expiry, no refresh token for MVP |
 | Backend architecture | REST API (Node.js + Express + TypeScript) |

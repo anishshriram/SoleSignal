@@ -16,7 +16,7 @@ import * as Keychain from 'react-native-keychain';
 // Must be updated when testing on a physical device — 'localhost' won't work
 // because the device is not on the same loopback as the dev machine.
 // On simulator, 'http://localhost:3000' works fine.
-const BASE_URL = 'http://10.75.181.130:3000';
+const BASE_URL = 'http://10.75.132.42:3000';
 
 // Create a shared axios instance with a 10-second request timeout.
 // All exported functions use this instance rather than the global axios,
@@ -105,7 +105,7 @@ export const deleteContact = (id: number) => api.delete(`/contacts/${id}`);
 
 // ─── Alerts ──────────────────────────────────────────────────────────────────
 
-// Trigger an emergency alert. The backend validates ownership, sends an SMS via Twilio,
+// Trigger an emergency alert. The backend validates ownership, sends an SMS via Textbelt,
 // and returns { alert_id, delivery_status } whether SMS succeeded or failed.
 // sensor_id here is the DATABASE primary key (integer), not the BLE hardware UUID.
 export const sendAlert = (data: {

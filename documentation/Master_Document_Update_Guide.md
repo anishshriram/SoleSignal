@@ -10,7 +10,7 @@ This document is a comprehensive list of everything built during MVP implementat
 - The backend is implemented as a REST API using Node.js, Express, and TypeScript
 - The database is PostgreSQL, managed via Prisma ORM
 - The mobile app is React Native (bare CLI), iOS only for MVP
-- Twilio API is used for SMS delivery (option A was selected)
+- Textbelt API is used for SMS delivery (replaced Twilio — A2P 10DLC and toll-free verification blocked Twilio for US numbers)
 
 ---
 
@@ -29,7 +29,7 @@ Add a new subsection after "Basic Architectural Components":
 - HTTP Logger: Morgan
 - Password Hashing: bcryptjs (minimum 8 characters enforced)
 - JWT Library: jsonwebtoken (24-hour expiry, HS256 algorithm)
-- SMS: Twilio Node SDK
+- SMS: Textbelt API (HTTP, no SDK — uses Node 20 native fetch)
 
 **Mobile**
 - Framework: React Native 0.84 (bare CLI)
@@ -378,16 +378,24 @@ If the sensor disconnects while the app is running:
 
 ### Alert Dispatch Behavior (Mobile Side)
 
-When a tap pattern is detected (`"1"` received):
-1. An `alertInProgress` guard is set immediately to prevent duplicate alerts
-2. Alert popup shown to user: "Tap pattern detected — Sending emergency alert"
-3. One-shot GPS request fired (3 second timeout; graceful fallback if unavailable)
-4. Device vibrates: `[0, 500ms, 200ms, 500ms]` pattern
-5. POST /alerts called
-6. App navigates to AlertSent screen showing the alert ID
-7. `alertInProgress` guard released
+Both BLE tap detection and the manual SEND ALERT button go through the same shared countdown flow:
 
-Manual SEND ALERT button follows the same flow but shows an error dialog if the sensor is not paired or no contact exists.
+1. `startAlertCountdown(isManual)` is called
+2. A 10-second countdown overlay appears on screen with a CANCEL button
+3. If the user taps CANCEL: countdown stops, no alert is sent, event log shows "Alert cancelled"
+4. If countdown reaches 0:
+   - `alertInProgress` guard set immediately to prevent duplicates
+   - One-shot GPS request fired (3-second timeout; graceful fallback if unavailable)
+   - Device vibrates: `[0, 500ms, 200ms, 500ms]` pattern
+   - POST /alerts called
+   - App navigates to AlertSent screen showing the alert ID
+   - `alertInProgress` guard released
+
+If the sensor is not paired or no contact exists, the event log shows "Alert failed: sensor or contact not ready" in red and an error dialog is shown (for both tap and manual triggers).
+
+**Implementation note — stale closure:** The `dispatchAlert` function is called from a `setInterval` callback. To avoid stale closure bugs (where the interval captures an outdated function snapshot with null state), `dispatchAlert` is stored in a `dispatchAlertRef` that is updated on every render via `useEffect(() => { dispatchAlertRef.current = dispatchAlert; })`. The interval calls `dispatchAlertRef.current()`, ensuring it always uses the latest state values.
+
+Manual SEND ALERT button follows the same countdown flow.
 
 ---
 
@@ -462,9 +470,7 @@ Backend is available at `http://localhost:3000`. Database migrations run automat
 |----------|-------------|
 | `DATABASE_URL` | PostgreSQL connection string |
 | `JWT_SECRET` | Secret key for signing JWTs (use a long random string) |
-| `TWILIO_ACCOUNT_SID` | Twilio account SID (from console.twilio.com) |
-| `TWILIO_AUTH_TOKEN` | Twilio auth token |
-| `TWILIO_PHONE_NUMBER` | Twilio phone number used as SMS sender |
+| `TEXTBELT_KEY` | Textbelt paid API key (from textbelt.com) |
 | `DB_PASSWORD` | PostgreSQL password (Docker only) |
 
 ### Local Development (without Docker)
@@ -600,10 +606,13 @@ triggerSOS(): prints "SOS" to Serial
 Phone receives BLE notification
   ↓ bleService.monitorTapPattern(): atob(value) → "1"
   ↓ onTapPattern() fires in HomeScreen
-handleAutoAlert() → dispatchAlert()
+startAlertCountdown() → 10-second cancel window shown to user
+  ↓ (if not cancelled)
+dispatchAlert()
   ↓ GPS request (3s timeout)
   ↓ POST /alerts { sensor_id, contact_id, gps_latitude, gps_longitude }
-Backend → Twilio SMS to emergency contact
+Backend: reverseGeocode(lat, lon) → Nominatim API → human-readable address
+Backend → Textbelt SMS: "EMERGENCY ALERT from [Name]. Location: [Address]. Time: [ISO]"
 ```
 
 The `"1"` value described in Section 7 (BLE Integration) is exactly what the firmware sends when the CNN confirms a SOS gesture after 3 votes.
@@ -628,15 +637,23 @@ Training data files are **not included in the repository** (not committed). The 
 
 `POST /contacts` validates phone numbers against the E.164 format (`+` followed by country code and digits, e.g. `+17321234567`). Plain 10-digit numbers without country code are rejected.
 
-### Twilio SMS Message Format
+### SMS Message Format
 
 The SMS sent to the emergency contact includes:
-- Alert ID
 - User's name
-- GPS coordinates (if available) or "Location unavailable"
+- Human-readable address (reverse geocoded from GPS) or "Location unavailable"
 - Timestamp
 
-Twilio SMS delivery is retried up to 3 times (per NFR-5) with a short delay between attempts. `delivery_status` is set to `pending` on alert creation, `delivered` on success, or `failed` after exhausting retries.
+Example:
+```
+EMERGENCY ALERT from Jane Smith. Location: 123 College Ave, New Brunswick, NJ 08901, United States. Time: 2026-04-20T18:14:27.550Z
+```
+
+**Reverse geocoding:** The backend calls Nominatim (OpenStreetMap) to convert GPS coordinates into a human-readable address before building the SMS body. Nominatim is free and requires no API key, but does require a descriptive `User-Agent` header per their usage policy. If geocoding fails (network unreachable), the SMS falls back to raw GPS coordinates. Implementation: `reverseGeocode()` function in `backend/routes/alerts.ts`.
+
+SMS delivery via Textbelt is retried up to 3 times (per NFR-5). `delivery_status` is set to `pending` on alert creation, `delivered` on success, or `failed` after exhausting retries.
+
+**Note:** The original spec referenced Twilio. Twilio was replaced with Textbelt due to A2P 10DLC registration requirements blocking SMS delivery on all US local numbers, and toll-free verification blocking the trial number. Textbelt requires no carrier registration and delivers immediately with a paid API key (~$0.01/text).
 
 ### React Native — iOS Specific Notes
 
