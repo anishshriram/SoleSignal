@@ -2,7 +2,7 @@
 
 ## General Work Plan
 
-Build the SoleSignal MVP backend and mobile app. The backend is a REST API (Node.js + Express + TypeScript + Prisma) serving all 12 endpoints defined in the Software Documentation Master PDF. The mobile app (React Native) handles BLE sensor pairing, tap pattern reception, and alert triggering. SMS delivery uses the Twilio API. Authentication uses stateless JWTs with 24hr expiry. The authoritative spec is `documentation/Software Documentation (Master v0).pdf`.
+Build the SoleSignal MVP backend and mobile app. The backend is a REST API (Node.js + Express + TypeScript + Prisma) serving all 12 endpoints defined in the Software Documentation Master PDF. The mobile app (React Native) handles BLE sensor pairing, tap pattern reception, and alert triggering. SMS delivery uses the Textbelt API (replaced Twilio — A2P 10DLC and toll-free verification blocked Twilio for US numbers). Authentication uses stateless JWTs with 24hr expiry. The authoritative spec is `documentation/Software Documentation (Master v0).pdf`.
 
 ---
 
@@ -10,7 +10,7 @@ Build the SoleSignal MVP backend and mobile app. The backend is a REST API (Node
 
 - **Stage 1 — Backend foundation:** Project setup, Prisma schema (all 4 entities), PostgreSQL DB, Express server, JWT auth middleware.
 - **Stage 2 — User + Contact APIs:** Register, login, and add-contact endpoints with JWT protection.
-- **Stage 3 — Remaining backend APIs:** updateUserProfile, logoutUser, pairSensor, getSensorStatus, getContacts, updateContact, deleteContact, sendAlert (Twilio), getAlertStatus.
+- **Stage 3 — Remaining backend APIs:** updateUserProfile, logoutUser, pairSensor, getSensorStatus, getContacts, updateContact, deleteContact, sendAlert (Textbelt), getAlertStatus.
 - **Stage 4 — Mobile app:** React Native setup, BLE pairing screen, contacts screen, alert trigger flow, onboarding.
 - **Stage 5 — Integration + testing:** End-to-end tests, API tests, bug fixes.
 - **Stage 6 — Deployment:** Docker, production config, environment variables.
@@ -75,9 +75,13 @@ Build the SoleSignal MVP backend and mobile app. The backend is a REST API (Node
 - [x] Auto-reconnect on app load — silently attempts BLE reconnect on startup if sensor is paired in DB
 - [x] Unpair button on Home screen — confirmation dialog, BLE disconnect + DELETE /sensors/me
 - [x] Vibration on alert dispatch — `[0, 500, 200, 500]` pattern
-- [x] 10-second cancel countdown overlay — shown for both tap and manual alert triggers
-- [x] Alert dispatch stale closure fixed — `dispatchAlertRef` pattern ensures setInterval always calls latest function
-- [x] Reverse geocoding — Nominatim (OpenStreetMap) converts GPS to human-readable address in SMS
+- [x] 10-second cancel countdown overlay — shown for both tap and manual alert triggers; CANCEL button dismisses without sending
+- [x] Alert dispatch stale closure fixed — `dispatchAlertRef` pattern ensures setInterval always calls latest function (fixes tap trigger silently failing)
+- [x] Reverse geocoding — Nominatim (OpenStreetMap) converts GPS to human-readable address in SMS; falls back to raw coords on failure
+- [x] Unpair BLE disconnect fixed — `bleService.disconnect()` called before `clearBLEState()` so ESP32 resumes advertising after unpair
+- [x] Twilio replaced with Textbelt — `TEXTBELT_KEY` env var; no carrier registration required; ~$0.01/text
+- [x] `hardware/demo_game-4.ino` — active Arduino firmware for demo game (release gate removed; 2-char BLE protocol: `"00"` idle, `"01"` start/resume, `"10"` pause, `"11"` jump)
+- [x] demov2 BLE protocol updated for `demo_game-4.ino` — 2-char protocol, name-based BLE filter (`"SoleSignal_Game"`), GATT reconnect on drop
 
 **Platform:** iOS only (bare React Native CLI, tested via Xcode on personal device)
 **Theme:** Scarlet `#CC0033` / Black `#000000` / White `#FFFFFF` (Rutgers University)
@@ -188,9 +192,9 @@ echo "http://$(ipconfig getifaddr en0):3000/"
 | Unpair dialog | ✅ | Confirmation dialog shown, destructive red Unpair button |
 | Manual SEND ALERT button | ✅ | Sends alert record to backend when sensor + contact are set |
 
-### What is still pending
-- Twilio SMS — alert record is created in DB but no SMS is physically sent yet
-- Auto-reconnect — after app reload, sensor shows yellow (not connected) until user manually reconnects via Pairing screen
+### What is still pending (as of 2026-03-30 — both resolved in later sessions)
+- ~~Twilio SMS~~ — resolved 2026-04-20: Twilio replaced with Textbelt; SMS confirmed delivered end-to-end
+- ~~Auto-reconnect~~ — resolved 2026-04-04: auto-reconnect implemented on app load via `reconnectAttempted` ref
 
 ---
 
@@ -212,9 +216,9 @@ echo "http://$(ipconfig getifaddr en0):3000/"
 | BLE disconnect listener added | `mobile/src/screens/HomeScreen.tsx` | Status dot updates immediately when device drops |
 | Added `onData` callback to `monitorTapPattern` | `mobile/src/services/ble.ts` | Raw characteristic values logged to event log |
 
-### Known remaining issues
+### Known remaining issues (as of 2026-03-30)
 - XIAO firmware sends characteristic data continuously — the `"1"` filter now prevents false alerts, but the event log will show every transmission
-- Twilio SMS not wired — alerts create DB records but no SMS is sent
+- ~~Twilio SMS not wired~~ — resolved 2026-04-20: replaced with Textbelt, SMS delivery confirmed
 - `BASE_URL` in `api.ts` hardcoded to local IP — must be updated when network changes
 
 ---
@@ -278,7 +282,7 @@ Full audit of all 24 source files performed. Issues found:
 | `GET /contacts` returns 404 on empty list | Breaking | **Fixed** |
 | `sensor_id`/`contact_id` parsed with `parseInt` on already-numeric values | Medium | **Fixed** (use `Number()`) |
 | BLE service UUIDs are firmware placeholders | High | **Fixed** — UUIDs provided by firmware team |
-| Twilio SMS not implemented | High | Open — awaiting account |
+| Twilio SMS not implemented | High | **Fixed** — replaced with Textbelt (2026-04-20); see Twilio → Textbelt session summary |
 | JWT_SECRET falls back to hardcoded default if env missing | Security | Acceptable for dev; fix before production |
 
 ---
@@ -313,7 +317,7 @@ Full audit of all 24 source files performed. Issues found:
 1. ~~**Wire Twilio**~~ — complete. SMS sends on every alert with up to 3 retries. `delivery_status` set to `delivered` or `failed`.
 2. ~~**BLE UUIDs**~~ — complete
 3. ~~**Stage 5 testing**~~ — complete
-4. **Stage 6** — Docker + production deployment
+4. ~~**Stage 6**~~ — complete. Docker + `docker-compose.yml` + `entrypoint.sh` + `.env.example` all added.
 
 ---
 
@@ -570,7 +574,7 @@ All 20 backend and mobile source files now have detailed inline comments explain
 | Added `backend/entrypoint.sh` | `backend/entrypoint.sh` | Runs `prisma migrate deploy` then starts server via `tsx` |
 | Added `backend/.dockerignore` | `backend/.dockerignore` | Excludes node_modules, dist, .env, tests from image |
 | Added `docker-compose.yml` | `docker-compose.yml` | Orchestrates backend + postgres:14-alpine; health check ensures DB ready before backend starts; persistent volume for DB data |
-| Added `.env.example` | `.env.example` | Documents all required secrets: DB_PASSWORD, JWT_SECRET, Twilio credentials |
+| Added `.env.example` | `.env.example` | Documents all required secrets: DB_PASSWORD, JWT_SECRET, TEXTBELT_KEY |
 
 ### Known remaining issues
 - Auto-reconnect not yet tested on physical device — requires a build with the new code
@@ -597,12 +601,43 @@ The following items were implemented during development but are **not reflected 
 | BLE service UUID + characteristic UUID | `12345678-1234-1234-1234-1234567890ab` / `99999999-8888-7777-6666-555555555555` (from firmware team) | Not documented anywhere in the spec |
 | BLE tap trigger protocol | Firmware sends `"1"` (ASCII, base64-encoded over BLE) to signal a confirmed tap pattern | Not specified in the doc — only says "tap pattern" without defining the signal value |
 | Sensor unpair behavior | Sensor record is deleted on unpair; associated alerts are cascade-deleted | No unpair flow described in the doc |
+| Twilio replaced with Textbelt | SMS uses Textbelt API (`TEXTBELT_KEY`); no A2P 10DLC or toll-free verification needed | Doc references Twilio throughout |
+| Reverse geocoding in SMS | Backend calls Nominatim (OpenStreetMap) to convert GPS to human-readable address before building SMS body | Doc does not describe geocoding; SMS format in doc uses raw coords |
+| Alert cancel countdown | 10-second overlay shown on both tap and manual trigger; CANCEL button aborts without sending | Doc does not describe any cancel window |
+| Alert dispatch stale closure fix | `dispatchAlertRef` pattern used in HomeScreen so `setInterval` always calls latest `dispatchAlert` with current state | Implementation detail not in doc; relevant if maintaining HomeScreen |
+| Unpair BLE disconnect | `bleService.disconnect()` called before `clearBLEState()` on unpair — required for ESP32 to resume advertising | Not described in doc; required for sensor to be re-paired after unpair |
+| `demo_game-4.ino` | Arduino firmware for demo game; 2-char BLE protocol (`"00"/"01"/"10"/"11"`), name-based advertisement (`"SoleSignal_Game"`) | Not in spec — demo artifact |
 | `POST /sensors/pair` response shape | Returns `{ message, sensor_id, id }` where `id` is the DB primary key used in alert requests | Doc does not specify that the DB `id` (separate from `sensor_id`) is returned and required for alerts |
 | Test framework | Vitest + Supertest (not Jest) due to TypeScript 6 peer dep conflict | Doc says Jest; switched to Vitest — functionally identical API |
 | React Native version | 0.84 (bare CLI) — `react-native-reanimated` removed, incompatible with RN 0.84 Hermes | No specific RN version pinned in the doc |
 | Node.js version requirement | Node 20 required — RN 0.84 uses `Array.toReversed()` which fails on Node 18 | Not documented |
 | JWT payload field | Uses `user_id` (not `id`) in JWT token payload | Doc describes JWT auth but does not specify the payload field name |
 | Alert `delivery_status` values | `pending`, `delivered`, `failed` | Doc mentions delivery status but does not enumerate the exact string values |
+
+---
+
+## Session Summary (2026-04-21) — Documentation + Code Discrepancy Fixes
+
+### Changes made
+
+| Change | File(s) | Notes |
+|--------|---------|-------|
+| Fixed stale "Twilio" references in stage description | `changelog.md` | Stage 3 description said "sendAlert (Twilio)" — updated to Textbelt |
+| Marked Twilio continuity audit item resolved | `changelog.md` | Had been "Open" since 2026-03-25 despite Textbelt migration on 2026-04-20 |
+| Marked pending items resolved (Twilio, auto-reconnect) | `changelog.md` | Device Testing 2026-03-30 section; both resolved in later sessions |
+| Marked "Known remaining issues" Twilio item resolved | `changelog.md` | Session 2026-03-30 section |
+| Marked Stage 6 complete in Next Actions | `changelog.md` | Item 4 was missing strikethrough despite stage being done |
+| Fixed stale `delivery_status: 'pending'` test expectations | `backend/tests/alerts.test.ts` | Tests 1 and 2 expected 'pending' but POST /alerts always returns 'delivered' or 'failed' after Textbelt runs; updated to `toContain(['delivered', 'failed'])` |
+| Fixed "Twilio" in JSDoc comment | `backend/routes/alerts.ts` | GET /alerts/:id comment said "Twilio attempts" — updated to Textbelt |
+| Added GET /sensors/me + DELETE /sensors/me to endpoint table | `documentation/CONTEXT.md` | Table listed 12 endpoints; actual implementation has 14 |
+| Updated navigation tech stack entry | `documentation/CONTEXT.md` | Listed `@react-navigation/stack` only; `@react-navigation/native-stack` is also installed and used for the main stack |
+| Updated Known Gaps section | `documentation/TEST_RESULTS.md` | Referenced Twilio — updated to Textbelt |
+| Updated Test 1 comment | `documentation/TEST_RESULTS.md` | "(Twilio is not yet wired, so all alerts are pending)" was stale |
+| Noted Node version discrepancy | `documentation/TEST_RESULTS.md`, `changelog.md` | `mobile/package.json` `engines` field requires `>= 22.11.0` but all session instructions reference Node 20; both versions are functional but the `engines` field should be reconciled |
+
+### Node version discrepancy
+
+`mobile/package.json` currently specifies `"engines": { "node": ">= 22.11.0" }` but all session startup instructions, the Master Document Update Guide, and `.xcode.env.local` reference Node 20. The `Array.toReversed()` call that originally required Node 20 also works on Node 22. Both versions are functional. If using Node 20 via nvm, npm will emit an engine warning but the app still builds and runs correctly.
 
 ---
 

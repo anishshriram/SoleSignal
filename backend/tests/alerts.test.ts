@@ -77,7 +77,7 @@ describe('POST /alerts', () => {
       });
     expect(res.status).toBe(201);
     expect(res.body).toHaveProperty('alert_id');
-    expect(res.body).toHaveProperty('delivery_status', 'pending');
+    expect(['delivered', 'failed']).toContain(res.body.delivery_status);
     alertId = res.body.alert_id;
   });
 
@@ -92,7 +92,7 @@ describe('POST /alerts', () => {
       });
     expect(res.status).toBe(201);
     expect(res.body).toHaveProperty('alert_id');
-    expect(res.body).toHaveProperty('delivery_status', 'pending');
+    expect(['delivered', 'failed']).toContain(res.body.delivery_status);
   });
 
   it('rejects alert when location_available is true but coordinates are missing', async () => {

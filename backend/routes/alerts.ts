@@ -185,7 +185,7 @@ router.post('/', authenticateToken, async (req, res) => {
  *
  * Returns: { alert_id, delivery_status, retry_count, timestamp }
  *   - delivery_status: "pending" | "delivered" | "failed"
- *   - retry_count: number of Twilio attempts made (0–3)
+ *   - retry_count: number of Textbelt send attempts made (0–3)
  *   - timestamp: when the alert was created (UTC ISO string)
  */
 router.get('/:id', authenticateToken, async (req, res) => {

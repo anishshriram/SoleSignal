@@ -76,7 +76,7 @@ exactly five things in order:
 | Mobile theme | Scarlet `#CC0033`, Black `#000000`, White `#FFFFFF` (Rutgers University) |
 | BLE | `react-native-ble-plx` |
 | Secure token storage | iOS Keychain via `react-native-keychain` |
-| Navigation | React Navigation stack (`@react-navigation/native` + `@react-navigation/stack`) |
+| Navigation | React Navigation (`@react-navigation/native` + `@react-navigation/native-stack`; `@react-navigation/stack` also installed) |
 | HTTP client | Axios |
 | BLE demo (legacy) | Web Bluetooth API, single HTML file, Chromium browsers only |
 
@@ -110,6 +110,8 @@ exactly five things in order:
 | POST | /users/logout | logoutUser() | Yes |
 | POST | /sensors/pair | pairSensor() | Yes |
 | GET | /sensors/{id} | getSensorStatus() | Yes |
+| GET | /sensors/me | getMySensor() | Yes |
+| DELETE | /sensors/me | unpairSensor() | Yes |
 | POST | /contacts | addContact() | Yes |
 | GET | /contacts | getContacts() | Yes |
 | PATCH | /contacts/{id} | updateContact() | Yes |
