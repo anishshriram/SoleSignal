@@ -1,0 +1,549 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Sole Rhythm — SoleSignal</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0d0d0d;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    font-family: 'Courier New', monospace;
+    color: #fff;
+  }
+  canvas { border: 2px solid #222; border-radius: 8px; display: block; }
+  #controls { margin-top: 16px; display: flex; align-items: center; gap: 16px; }
+  #connectBtn {
+    background: #CC0033; color: white; border: none;
+    padding: 10px 24px; border-radius: 6px; cursor: pointer;
+    font-family: 'Courier New', monospace; font-size: 14px;
+    font-weight: bold; letter-spacing: 1px;
+  }
+  #connectBtn:hover { background: #ff0044; }
+  #connectBtn:disabled { background: #444; cursor: default; }
+  #disconnectBtn {
+    background: #222; color: #9ca3af; border: 1px solid #444;
+    padding: 10px 24px; border-radius: 6px; cursor: pointer;
+    font-family: 'Courier New', monospace; font-size: 14px;
+    font-weight: bold; letter-spacing: 1px;
+    display: none;
+  }
+  #disconnectBtn:hover { background: #333; color: #fff; }
+  #status { font-size: 13px; color: #9ca3af; }
+  .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; background: #ef4444; }
+  .dot.on { background: #22c55e; }
+  #hint { margin-top: 10px; font-size: 12px; color: #374151; }
+  #log {
+    margin-top: 12px;
+    width: 800px;
+    height: 110px;
+    background: #0a0a0a;
+    border: 1px solid #222;
+    border-radius: 6px;
+    overflow-y: auto;
+    padding: 8px 10px;
+    font-size: 11px;
+    color: #555;
+    text-align: left;
+  }
+  #log .entry { line-height: 1.6; }
+  #log .entry.sig { color: #CC0033; }
+  #log .entry.conn { color: #22c55e; }
+  #log .entry.warn { color: #eab308; }
+</style>
+</head>
+<body>
+<canvas id="c" width="800" height="460"></canvas>
+<div id="controls">
+  <button id="connectBtn">CONNECT SENSOR</button>
+  <button id="disconnectBtn">DISCONNECT</button>
+  <div id="status"><span class="dot" id="dot"></span><span id="statusText">Not connected</span></div>
+</div>
+<div id="hint">Keyboard fallback: ENTER = start &nbsp;|&nbsp; A = TOE &nbsp;|&nbsp; S = HEEL</div>
+<div id="log"><span style="color:#333">— sensor log —</span></div>
+
+<script>
+// ── BLE ──────────────────────────────────────────────────────────────────────
+const SVC  = '12345678-1234-1234-1234-1234567890ab';
+const CHAR = '99999999-8888-7777-6666-555555555555';
+let lastVal = '';
+let bleDevice = null;
+let manualDisconnect = false;
+
+function addLog(text, cls) {
+  const box = document.getElementById('log');
+  const line = document.createElement('div');
+  line.className = 'entry' + (cls ? ' ' + cls : '');
+  const ts = new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  line.textContent = `[${ts}]  ${text}`;
+  box.appendChild(line);
+  if (box.children.length > 120) box.removeChild(box.firstChild);
+  box.scrollTop = box.scrollHeight;
+}
+
+function onBLEData(b64) {
+  const val = atob(b64).trim();
+  addLog(`raw → "${val}"`, val === '01' || val === '10' || val === '11' ? 'sig' : '');
+  if (val === lastVal) return;
+  lastVal = val;
+  handleSignal(val);
+}
+
+function onChar(e) {
+  const bytes = new Uint8Array(e.target.value.buffer);
+  onBLEData(btoa(String.fromCharCode(...bytes)));
+}
+
+async function connectGATT() {
+  const server  = await bleDevice.gatt.connect();
+  const service = await server.getPrimaryService(SVC);
+  const ch      = await service.getCharacteristic(CHAR);
+  await ch.startNotifications();
+  ch.removeEventListener('characteristicvaluechanged', onChar);
+  ch.addEventListener('characteristicvaluechanged', onChar);
+  setStatus('Connected', true);
+  showButtons('connected');
+  addLog(`connected to ${bleDevice.name || bleDevice.id}`, 'conn');
+}
+
+async function connect() {
+  manualDisconnect = false;
+  try {
+    if (bleDevice) {
+      setStatus('Reconnecting...', false);
+      showButtons('connecting');
+      await connectGATT();
+      return;
+    }
+    const dev = await navigator.bluetooth.requestDevice({
+      filters: [{ name: 'SoleSignal_Game' }],
+      optionalServices: [SVC]
+    });
+    bleDevice = dev;
+    setStatus('Connecting...', false);
+    showButtons('connecting');
+
+    dev.addEventListener('gattserverdisconnected', () => {
+      if (manualDisconnect) return;
+      addLog('sensor disconnected — auto-reconnecting...', 'warn');
+      setStatus('Reconnecting...', false);
+      setTimeout(async () => {
+        try { await connectGATT(); }
+        catch { addLog('reconnect failed', 'warn'); setStatus('Disconnected', false); showButtons('disconnected'); }
+      }, 1000);
+    });
+
+    await connectGATT();
+  } catch(e) {
+    setStatus('Failed: ' + e.message, false);
+    showButtons('disconnected');
+  }
+}
+
+function disconnect() {
+  if (!bleDevice) return;
+  manualDisconnect = true;
+  bleDevice.gatt.disconnect();
+  addLog('manually disconnected', 'warn');
+  setStatus('Disconnected', false);
+  showButtons('disconnected');
+}
+
+function showButtons(s) {
+  const cb = document.getElementById('connectBtn');
+  const db = document.getElementById('disconnectBtn');
+  if (s === 'connected') {
+    cb.style.display = 'none';
+    db.style.display = 'inline-block';
+  } else if (s === 'connecting') {
+    cb.style.display = 'none';
+    db.style.display = 'none';
+  } else {
+    cb.textContent = bleDevice ? 'RECONNECT' : 'CONNECT SENSOR';
+    cb.style.display = '';
+    cb.disabled = false;
+    db.style.display = 'none';
+  }
+}
+
+function setStatus(msg, on) {
+  document.getElementById('statusText').textContent = msg;
+  document.getElementById('dot').className = 'dot' + (on ? ' on' : '');
+}
+
+document.getElementById('connectBtn').addEventListener('click', connect);
+document.getElementById('disconnectBtn').addEventListener('click', disconnect);
+
+// Keyboard fallback
+window.addEventListener('keydown', e => {
+  if (e.code === 'Enter') handleSignal('11');
+  if (e.code === 'KeyA')  handleSignal('01');
+  if (e.code === 'KeyS')  handleSignal('10');
+});
+
+// ── CONSTANTS ─────────────────────────────────────────────────────────────────
+const W = 800, H = 460;
+const HIT_X      = 110;
+const HIT_WIN    = 48;   // px either side counts as a valid hit
+const NOTE_R     = 24;
+const LANE_H     = 90;
+
+const LANES = [
+  { id: 'toe',  y: 160, color: '#00bfff', dim: '#005f80', label: 'TOE',  key: '01' },
+  { id: 'heel', y: 300, color: '#ff6b35', dim: '#7a2c0a', label: 'HEEL', key: '10' },
+];
+
+// ── STATE ─────────────────────────────────────────────────────────────────────
+let state = 'idle'; // idle | playing | dead
+let notes, score, combo, maxCombo, misses, speed, frame, nextNote, deathTimer;
+let feedbacks = [];   // { text, x, y, dy, alpha, color }
+let laneFlash = {};   // laneId → { timer, hit }
+
+function reset() {
+  notes    = [];
+  score    = 0;
+  combo    = 0;
+  maxCombo = 0;
+  misses   = 0;
+  speed    = 2.2;
+  frame    = 0;
+  nextNote = 140;
+  feedbacks = [];
+  laneFlash = {};
+  deathTimer = 0;
+}
+
+function handleSignal(val) {
+  if (val === '11' && (state === 'idle')) {
+    state = 'playing';
+    reset();
+    return;
+  }
+  if (state !== 'playing') return;
+
+  const lane = LANES.find(l => l.key === val);
+  if (!lane) return;
+  pressLane(lane);
+}
+
+function pressLane(lane) {
+  // Find closest note in hit window for this lane
+  let best = null, bestDist = Infinity;
+  notes.forEach(n => {
+    if (n.lane !== lane) return;
+    const d = Math.abs(n.x - HIT_X);
+    if (d < HIT_WIN && d < bestDist) { best = n; bestDist = d; }
+  });
+
+  if (best) {
+    notes = notes.filter(n => n !== best);
+    combo++;
+    maxCombo = Math.max(maxCombo, combo);
+    const mult = comboMult(combo);
+    score += 100 * mult;
+    addFeedback(mult > 1 ? `PERFECT  x${mult}` : 'PERFECT', HIT_X + 8, lane.y - 36, '#22c55e');
+    laneFlash[lane.id] = { timer: 14, hit: true };
+  }
+  // No note in window — no penalty, just ignore the press
+}
+
+function comboMult(c) {
+  if (c >= 20) return 8;
+  if (c >= 10) return 4;
+  if (c >= 5)  return 2;
+  return 1;
+}
+
+function addFeedback(text, x, y, color) {
+  feedbacks.push({ text, x, y, dy: -0.6, alpha: 1, color });
+}
+
+// ── UPDATE ────────────────────────────────────────────────────────────────────
+function update() {
+  if (state !== 'playing') return;
+  frame++;
+  speed = 2.2 + Math.floor(frame / 700) * 0.3;
+
+  // Spawn note
+  nextNote--;
+  if (nextNote <= 0) {
+    const lane = LANES[Math.floor(Math.random() * LANES.length)];
+    notes.push({ lane, x: W + NOTE_R, id: frame });
+    nextNote = Math.floor(Math.random() * 80) + 80;
+  }
+
+  // Move
+  notes.forEach(n => n.x -= speed);
+
+  // Miss detection — note passed hit zone
+  const missed = notes.filter(n => n.x < HIT_X - HIT_WIN - NOTE_R);
+  missed.forEach(n => {
+    misses++;
+    combo = 0;
+    addFeedback('MISS', HIT_X + 8, n.lane.y - 36, '#ef4444');
+    laneFlash[n.lane.id] = { timer: 14, hit: false };
+  });
+  notes = notes.filter(n => n.x >= HIT_X - HIT_WIN - NOTE_R);
+
+  // Feedbacks
+  feedbacks.forEach(f => { f.y += f.dy; f.alpha -= 0.022; });
+  feedbacks = feedbacks.filter(f => f.alpha > 0);
+
+  // Lane flash timers
+  Object.keys(laneFlash).forEach(id => {
+    laneFlash[id].timer--;
+    if (laneFlash[id].timer <= 0) delete laneFlash[id];
+  });
+
+  if (misses >= 3) {
+    state = 'dead';
+    deathTimer = 160;
+  }
+}
+
+// ── DRAW ──────────────────────────────────────────────────────────────────────
+const canvas = document.getElementById('c');
+const ctx    = canvas.getContext('2d');
+
+function drawLanes() {
+  LANES.forEach(lane => {
+    const fl = laneFlash[lane.id];
+    let bg = lane.color + '18';
+    if (fl) bg = (fl.hit ? '#22c55e' : '#ef4444') + '40';
+
+    ctx.fillStyle = bg;
+    ctx.fillRect(0, lane.y - LANE_H / 2, W, LANE_H);
+
+    // Lane center line
+    ctx.strokeStyle = lane.color + '50';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([8, 8]);
+    ctx.beginPath();
+    ctx.moveTo(HIT_X + 20, lane.y);
+    ctx.lineTo(W, lane.y);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  });
+}
+
+function drawHitZone() {
+  // Vertical divider
+  ctx.strokeStyle = '#ffffff30';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(HIT_X, LANES[0].y - LANE_H / 2);
+  ctx.lineTo(HIT_X, LANES[LANES.length - 1].y + LANE_H / 2);
+  ctx.stroke();
+
+  // Target rings
+  LANES.forEach(lane => {
+    const fl = laneFlash[lane.id];
+    const ringColor = fl ? (fl.hit ? '#22c55e' : '#ef4444') : lane.color;
+    const alpha     = fl ? 'ff' : '99';
+
+    ctx.strokeStyle = ringColor + alpha;
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(HIT_X, lane.y, NOTE_R + 6, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // Inner dot
+    ctx.fillStyle = fl ? ringColor + 'aa' : lane.color + '33';
+    ctx.beginPath();
+    ctx.arc(HIT_X, lane.y, NOTE_R - 4, 0, Math.PI * 2);
+    ctx.fill();
+  });
+}
+
+function drawNotes() {
+  notes.forEach(n => {
+    const inWin = Math.abs(n.x - HIT_X) < HIT_WIN;
+    const alpha = inWin ? 'ff' : 'cc';
+
+    // Shadow glow
+    ctx.shadowColor = n.lane.color;
+    ctx.shadowBlur  = inWin ? 18 : 6;
+
+    ctx.fillStyle = n.lane.color + alpha;
+    ctx.beginPath();
+    ctx.arc(n.x, n.lane.y, NOTE_R, 0, Math.PI * 2);
+    ctx.fill();
+
+    // White ring when in window
+    if (inWin) {
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.arc(n.x, n.lane.y, NOTE_R, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    ctx.shadowBlur = 0;
+  });
+}
+
+function drawFeedbacks() {
+  feedbacks.forEach(f => {
+    ctx.globalAlpha = f.alpha;
+    ctx.fillStyle   = f.color;
+    ctx.font = 'bold 16px Courier New';
+    ctx.textAlign = 'left';
+    ctx.fillText(f.text, f.x, f.y);
+  });
+  ctx.globalAlpha = 1;
+}
+
+function drawHUD() {
+  // Score
+  ctx.textAlign = 'right';
+  ctx.fillStyle = '#ffffff';
+  ctx.font = 'bold 28px Courier New';
+  ctx.fillText(String(score).padStart(7, '0'), W - 18, 38);
+  ctx.fillStyle = '#444';
+  ctx.font = '11px Courier New';
+  ctx.fillText('SCORE', W - 18, 53);
+
+  // Combo
+  if (combo >= 2) {
+    ctx.fillStyle = '#eab308';
+    ctx.font = 'bold 17px Courier New';
+    ctx.fillText(`${combo}x COMBO`, W - 18, 76);
+  }
+
+  // Lives
+  ctx.textAlign = 'left';
+  for (let i = 0; i < 3; i++) {
+    ctx.fillStyle = i < (3 - misses) ? '#CC0033' : '#2a2a2a';
+    ctx.font = '24px serif';
+    ctx.fillText('♥', 18 + i * 30, 40);
+  }
+
+  // Lane labels (left side)
+  LANES.forEach(lane => {
+    ctx.fillStyle = lane.color + 'cc';
+    ctx.font = 'bold 13px Courier New';
+    ctx.textAlign = 'left';
+    ctx.fillText(lane.label, 16, lane.y + 5);
+  });
+
+  // Speed indicator
+  ctx.fillStyle = '#2a2a2a';
+  ctx.font = '11px Courier New';
+  ctx.fillText(`SPD ${speed.toFixed(1)}`, 18, H - 10);
+}
+
+function drawIdleScreen() {
+  ctx.fillStyle = '#0d0d0d';
+  ctx.fillRect(0, 0, W, H);
+  drawLanes();
+
+  // Decorative notes sliding across
+  const t = Date.now() / 1000;
+  LANES.forEach((lane, li) => {
+    for (let i = 0; i < 5; i++) {
+      const nx = ((t * 120 + i * 180 + li * 90) % (W + 60)) - 30;
+      ctx.globalAlpha = 0.18;
+      ctx.fillStyle = lane.color;
+      ctx.beginPath();
+      ctx.arc(nx, lane.y, NOTE_R, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  });
+  ctx.globalAlpha = 1;
+
+  // Title
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#CC0033';
+  ctx.font = 'bold 62px Courier New';
+  ctx.fillText('SOLE RHYTHM', W / 2, 78);
+
+  ctx.fillStyle = '#444';
+  ctx.font = '13px Courier New';
+  ctx.fillText('SOLESIGNAL DEMO', W / 2, 100);
+
+  // Lane labels centered
+  ctx.font = 'bold 24px Courier New';
+  ctx.fillStyle = LANES[0].color;
+  ctx.fillText('TOE  →  upper lane', W / 2, LANES[0].y + 8);
+  ctx.fillStyle = LANES[1].color;
+  ctx.fillText('HEEL  →  lower lane', W / 2, LANES[1].y + 8);
+
+  // Instructions
+  ctx.fillStyle = '#ffffff';
+  ctx.font = '20px Courier New';
+  ctx.fillText('Hold TOE + HEEL  (3s)  to start', W / 2, H - 90);
+
+  ctx.fillStyle = '#9ca3af';
+  ctx.font = '14px Courier New';
+  ctx.fillText('Hit notes as they reach the left line     3 misses = game over', W / 2, H - 62);
+}
+
+function drawPlayingScreen() {
+  ctx.fillStyle = '#0d0d0d';
+  ctx.fillRect(0, 0, W, H);
+  drawLanes();
+  drawHitZone();
+  drawNotes();
+  drawFeedbacks();
+  drawHUD();
+}
+
+function drawDeadScreen() {
+  drawPlayingScreen();
+  const t = Math.min(1, (160 - deathTimer) / 40);
+  ctx.fillStyle = `rgba(0,0,0,${t * 0.75})`;
+  ctx.fillRect(0, 0, W, H);
+
+  if (deathTimer < 130) {
+    const a = Math.min(1, (130 - deathTimer) / 18);
+    ctx.globalAlpha = a;
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#CC0033';
+    ctx.font = 'bold 68px Courier New';
+    ctx.fillText('GAME OVER', W / 2, H / 2 - 44);
+
+    ctx.fillStyle = '#ffffff';
+    ctx.font = '26px Courier New';
+    ctx.fillText(`SCORE  ${score}`, W / 2, H / 2 + 4);
+
+    ctx.fillStyle = '#eab308';
+    ctx.font = '18px Courier New';
+    ctx.fillText(`BEST COMBO  ${maxCombo}x`, W / 2, H / 2 + 36);
+
+    if (deathTimer < 70) {
+      ctx.fillStyle = '#555';
+      ctx.font = '15px Courier New';
+      ctx.fillText('returning to start...', W / 2, H / 2 + 72);
+    }
+    ctx.globalAlpha = 1;
+  }
+}
+
+// ── LOOP ──────────────────────────────────────────────────────────────────────
+function loop() {
+  update();
+
+  if (state === 'dead') {
+    deathTimer--;
+    if (deathTimer <= 0) {
+      state = 'idle';
+      lastVal = '';
+    }
+  }
+
+  ctx.textAlign = 'left';
+  if (state === 'idle')    drawIdleScreen();
+  if (state === 'playing') drawPlayingScreen();
+  if (state === 'dead')    drawDeadScreen();
+
+  requestAnimationFrame(loop);
+}
+
+reset();
+loop();
+</script>
+</body>
+</html>

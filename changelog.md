@@ -616,6 +616,19 @@ The following items were implemented during development but are **not reflected 
 
 ---
 
+## Session Summary (2026-04-21) — demov4: Jumping Game + Sole Rhythm Game
+
+### What was added
+
+| File | Description |
+|------|-------------|
+| `demov4/index1.html` | "Sole Signal Jumping Game" — BLE-connected browser jump game; sensor tap (`"01"` protocol) triggers jump; UUID-based BLE filter (`12345678-...`); keyboard fallback: ENTER = start, SPACE = jump; SoleSignal scarlet theme |
+| `demov4/index2.html` | "Sole Rhythm" — two-sensor BLE rhythm game; toe (`"01"`) and heel (`"10"`) map to separate beat lanes; UUID-based BLE filter; keyboard fallback: A = TOE, S = HEEL; SoleSignal scarlet theme |
+
+Both demos use the production SoleSignal BLE service UUID (`12345678-1234-1234-1234-1234567890ab`) and characteristic UUID (`99999999-8888-7777-6666-555555555555`) and include the same BLE connection/disconnect/log UI pattern established in demov1.
+
+---
+
 ## Session Summary (2026-04-21) — Documentation + Code Discrepancy Fixes
 
 ### Changes made

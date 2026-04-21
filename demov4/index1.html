@@ -1,0 +1,441 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Sole Signal Jumping Game</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0d0d0d;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    font-family: 'Courier New', monospace;
+    color: #fff;
+  }
+  canvas { border: 2px solid #222; border-radius: 8px; display: block; }
+  #controls { margin-top: 16px; display: flex; align-items: center; gap: 16px; }
+  #connectBtn {
+    background: #CC0033; color: white; border: none;
+    padding: 10px 24px; border-radius: 6px; cursor: pointer;
+    font-family: 'Courier New', monospace; font-size: 14px;
+    font-weight: bold; letter-spacing: 1px;
+  }
+  #connectBtn:hover { background: #ff0044; }
+  #connectBtn:disabled { background: #444; cursor: default; }
+  #disconnectBtn {
+    background: #222; color: #9ca3af; border: 1px solid #444;
+    padding: 10px 24px; border-radius: 6px; cursor: pointer;
+    font-family: 'Courier New', monospace; font-size: 14px;
+    font-weight: bold; letter-spacing: 1px;
+    display: none;
+  }
+  #disconnectBtn:hover { background: #333; color: #fff; }
+  #status { font-size: 13px; color: #9ca3af; }
+  .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; background: #ef4444; }
+  .dot.on { background: #22c55e; }
+  #hint { margin-top: 10px; font-size: 12px; color: #374151; }
+  #log {
+    margin-top: 12px;
+    width: 800px;
+    height: 110px;
+    background: #0a0a0a;
+    border: 1px solid #222;
+    border-radius: 6px;
+    overflow-y: auto;
+    padding: 8px 10px;
+    font-size: 11px;
+    color: #555;
+    text-align: left;
+  }
+  #log .entry { line-height: 1.6; }
+  #log .entry.sig { color: #CC0033; }
+  #log .entry.conn { color: #22c55e; }
+  #log .entry.warn { color: #eab308; }
+</style>
+</head>
+<body>
+<canvas id="c" width="800" height="400"></canvas>
+<div id="controls">
+  <button id="connectBtn">CONNECT SENSOR</button>
+  <button id="disconnectBtn">DISCONNECT</button>
+  <div id="status"><span class="dot" id="dot"></span><span id="statusText">Not connected</span></div>
+</div>
+<div id="hint">Keyboard fallback: ENTER = start &nbsp;|&nbsp; SPACE = jump</div>
+<div id="log"><span style="color:#333">— sensor log —</span></div>
+
+<script>
+// ── BLE ──────────────────────────────────────────────────────────────────────
+const SVC  = '12345678-1234-1234-1234-1234567890ab';
+const CHAR = '99999999-8888-7777-6666-555555555555';
+let lastVal = '';
+let bleDevice = null;
+let manualDisconnect = false;
+
+function addLog(text, cls) {
+  const box = document.getElementById('log');
+  const line = document.createElement('div');
+  line.className = 'entry' + (cls ? ' ' + cls : '');
+  const ts = new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  line.textContent = `[${ts}]  ${text}`;
+  box.appendChild(line);
+  if (box.children.length > 120) box.removeChild(box.firstChild);
+  box.scrollTop = box.scrollHeight;
+}
+
+function onBLEData(b64) {
+  const val = atob(b64).trim();
+  addLog(`raw → "${val}"`, val === '01' || val === '11' ? 'sig' : '');
+  if (val === lastVal) return;
+  lastVal = val;
+  handleSignal(val);
+}
+
+function onChar(e) {
+  const bytes = new Uint8Array(e.target.value.buffer);
+  onBLEData(btoa(String.fromCharCode(...bytes)));
+}
+
+async function connectGATT() {
+  const server  = await bleDevice.gatt.connect();
+  const service = await server.getPrimaryService(SVC);
+  const ch      = await service.getCharacteristic(CHAR);
+  await ch.startNotifications();
+  ch.removeEventListener('characteristicvaluechanged', onChar);
+  ch.addEventListener('characteristicvaluechanged', onChar);
+  setStatus('Connected', true);
+  showButtons('connected');
+  addLog(`connected to ${bleDevice.name || bleDevice.id}`, 'conn');
+}
+
+async function connect() {
+  manualDisconnect = false;
+  try {
+    if (bleDevice) {
+      setStatus('Reconnecting...', false);
+      showButtons('connecting');
+      await connectGATT();
+      return;
+    }
+    const dev = await navigator.bluetooth.requestDevice({
+      filters: [{ name: 'SoleSignal_Game' }],
+      optionalServices: [SVC]
+    });
+    bleDevice = dev;
+    setStatus('Connecting...', false);
+    showButtons('connecting');
+
+    dev.addEventListener('gattserverdisconnected', () => {
+      if (manualDisconnect) return;
+      addLog('sensor disconnected — auto-reconnecting...', 'warn');
+      setStatus('Reconnecting...', false);
+      setTimeout(async () => {
+        try { await connectGATT(); }
+        catch { addLog('reconnect failed', 'warn'); setStatus('Disconnected', false); showButtons('disconnected'); }
+      }, 1000);
+    });
+
+    await connectGATT();
+  } catch(e) {
+    setStatus('Failed: ' + e.message, false);
+    showButtons('disconnected');
+  }
+}
+
+function disconnect() {
+  if (!bleDevice) return;
+  manualDisconnect = true;
+  bleDevice.gatt.disconnect();
+  addLog('manually disconnected', 'warn');
+  setStatus('Disconnected', false);
+  showButtons('disconnected');
+}
+
+function showButtons(s) {
+  const cb = document.getElementById('connectBtn');
+  const db = document.getElementById('disconnectBtn');
+  if (s === 'connected') {
+    cb.style.display = 'none';
+    db.style.display = 'inline-block';
+  } else if (s === 'connecting') {
+    cb.style.display = 'none';
+    db.style.display = 'none';
+  } else {
+    cb.textContent = bleDevice ? 'RECONNECT' : 'CONNECT SENSOR';
+    cb.style.display = '';
+    cb.disabled = false;
+    db.style.display = 'none';
+  }
+}
+
+function setStatus(msg, on) {
+  document.getElementById('statusText').textContent = msg;
+  document.getElementById('dot').className = 'dot' + (on ? ' on' : '');
+}
+
+document.getElementById('connectBtn').addEventListener('click', connect);
+document.getElementById('disconnectBtn').addEventListener('click', disconnect);
+
+// Keyboard fallback
+window.addEventListener('keydown', e => {
+  if (e.code === 'Enter') handleSignal('11');
+  if (e.code === 'Space') { e.preventDefault(); handleSignal('01'); }
+});
+
+// ── CONSTANTS ─────────────────────────────────────────────────────────────────
+const W = 800, H = 400;
+const GROUND_Y = H - 70;
+const GRAVITY  = 0.55;
+const JUMP_VY  = -13.5;
+const CHAR_X   = 110;
+const CHAR_W   = 26, CHAR_H = 46;
+
+// ── STATE ─────────────────────────────────────────────────────────────────────
+let state = 'idle'; // idle | running | dead
+let charY, charVY, grounded;
+let obstacles, score, speed, frame, deathTimer;
+let bgOffset = 0;
+
+function reset() {
+  charY = GROUND_Y - CHAR_H;
+  charVY = 0;
+  grounded = true;
+  obstacles = [];
+  score = 0;
+  speed = 4.2;
+  frame = 0;
+  deathTimer = 0;
+  nextObs = 480;
+}
+
+let nextObs = 480;
+
+function handleSignal(val) {
+  if (val === '11' && state === 'idle')    { state = 'running'; reset(); }
+  if (val === '01' && state === 'running') { doJump(); }
+}
+
+function doJump() {
+  if (grounded) { charVY = JUMP_VY; grounded = false; }
+}
+
+// ── UPDATE ────────────────────────────────────────────────────────────────────
+function update() {
+  if (state !== 'running') return;
+  frame++;
+  bgOffset = (bgOffset + speed * 0.4) % W;
+  score  = Math.floor(frame / 8);
+  speed  = 4.2 + Math.floor(frame / 450) * 0.35;
+
+  // Physics
+  charVY += GRAVITY;
+  charY  += charVY;
+  if (charY >= GROUND_Y - CHAR_H) {
+    charY = GROUND_Y - CHAR_H;
+    charVY = 0;
+    grounded = true;
+  }
+
+  // Spawn
+  nextObs--;
+  if (nextObs <= 0) {
+    const h = [44, 66, 94][Math.floor(Math.random() * 3)];
+    obstacles.push({ x: W + 20, w: 22, h, y: GROUND_Y - h });
+    nextObs = Math.floor(Math.random() * 220) + 360;
+  }
+
+  obstacles.forEach(o => o.x -= speed);
+  obstacles = obstacles.filter(o => o.x + o.w > -20);
+
+  // Collision (slightly forgiving margins)
+  for (const o of obstacles) {
+    if (
+      CHAR_X + CHAR_W - 6 > o.x + 4 &&
+      CHAR_X + 6 < o.x + o.w - 4 &&
+      charY + CHAR_H - 4 > o.y &&
+      charY < o.y + o.h
+    ) {
+      state = 'dead';
+      deathTimer = 130;
+      return;
+    }
+  }
+}
+
+// ── DRAW ──────────────────────────────────────────────────────────────────────
+const canvas = document.getElementById('c');
+const ctx    = canvas.getContext('2d');
+
+function drawChar(x, y, air) {
+  const cx = x + 13; // center x
+  ctx.strokeStyle = '#CC0033';
+  ctx.lineWidth = 3;
+  ctx.lineCap = 'round';
+
+  // Head
+  ctx.beginPath();
+  ctx.arc(cx, y + 7, 7, 0, Math.PI * 2);
+  ctx.stroke();
+
+  // Body
+  ctx.beginPath();
+  ctx.moveTo(cx, y + 14);
+  ctx.lineTo(cx, y + 34);
+  ctx.stroke();
+
+  // Arms
+  ctx.beginPath();
+  if (!air) {
+    ctx.moveTo(cx - 10, y + 22);
+    ctx.lineTo(cx + 10, y + 22);
+  } else {
+    ctx.moveTo(cx - 11, y + 18);
+    ctx.lineTo(cx + 11, y + 18);
+  }
+  ctx.stroke();
+
+  // Legs
+  ctx.beginPath();
+  if (!air) {
+    ctx.moveTo(cx, y + 34); ctx.lineTo(cx - 9, y + 46);
+    ctx.moveTo(cx, y + 34); ctx.lineTo(cx + 9, y + 46);
+  } else {
+    ctx.moveTo(cx, y + 34); ctx.lineTo(cx - 11, y + 42);
+    ctx.moveTo(cx, y + 34); ctx.lineTo(cx + 11, y + 42);
+  }
+  ctx.stroke();
+  ctx.lineCap = 'butt';
+}
+
+function drawBg() {
+  ctx.fillStyle = '#0d0d0d';
+  ctx.fillRect(0, 0, W, H);
+
+  // Distant mountains
+  ctx.fillStyle = '#161616';
+  for (let i = 0; i < 6; i++) {
+    const mx = ((i * 180) - bgOffset * 0.2 + W) % (W + 180) - 40;
+    ctx.beginPath();
+    ctx.moveTo(mx, GROUND_Y);
+    ctx.lineTo(mx + 80, GROUND_Y - 120);
+    ctx.lineTo(mx + 160, GROUND_Y);
+    ctx.fill();
+  }
+
+  // Ground
+  ctx.fillStyle = '#1a1a1a';
+  ctx.fillRect(0, GROUND_Y, W, H - GROUND_Y);
+  ctx.fillStyle = '#333';
+  ctx.fillRect(0, GROUND_Y, W, 2);
+
+  // Ground tick marks
+  ctx.fillStyle = '#252525';
+  for (let i = 0; i < 30; i++) {
+    const tx = ((i * 60) - bgOffset + W) % W;
+    ctx.fillRect(tx, GROUND_Y + 4, 2, 8);
+  }
+}
+
+function drawObstacles() {
+  obstacles.forEach(o => {
+    ctx.fillStyle = '#8b0000';
+    ctx.fillRect(o.x, o.y, o.w, o.h);
+    ctx.fillStyle = '#CC0033';
+    ctx.fillRect(o.x, o.y, o.w, 5);
+    ctx.fillStyle = '#ff4455';
+    ctx.fillRect(o.x, o.y, 3, o.h);
+  });
+}
+
+function drawHUD() {
+  ctx.textAlign = 'right';
+  ctx.fillStyle = '#ffffff';
+  ctx.font = 'bold 20px Courier New';
+  ctx.fillText(String(score).padStart(6, '0'), W - 18, 28);
+  ctx.fillStyle = '#555';
+  ctx.font = '11px Courier New';
+  ctx.fillText('SCORE', W - 18, 43);
+
+  ctx.textAlign = 'left';
+  ctx.fillStyle = '#333';
+  ctx.font = '11px Courier New';
+  ctx.fillText(`SPD ${speed.toFixed(1)}`, 16, 28);
+}
+
+function drawIdle() {
+  drawBg();
+  drawChar(CHAR_X + 240, GROUND_Y - CHAR_H, false);
+
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#CC0033';
+  ctx.font = 'bold 48px Courier New';
+  ctx.fillText('SOLE SIGNAL', W / 2, 118);
+  ctx.fillText('JUMPING GAME', W / 2, 172);
+
+  ctx.fillStyle = '#555';
+  ctx.font = '14px Courier New';
+  ctx.fillText('SOLESIGNAL DEMO', W / 2, 198);
+
+  ctx.fillStyle = '#ffffff';
+  ctx.font = '22px Courier New';
+  ctx.fillText('Hold TOE + HEEL  (3s)  to start', W / 2, 258);
+
+  ctx.fillStyle = '#9ca3af';
+  ctx.font = '16px Courier New';
+  ctx.fillText('TOE (1s) = Jump', W / 2, 292);
+}
+
+function drawRunning() {
+  drawBg();
+  drawObstacles();
+  drawChar(CHAR_X, charY, !grounded);
+  drawHUD();
+}
+
+function drawDead() {
+  drawRunning();
+  const t = (130 - deathTimer) / 130;
+  ctx.fillStyle = `rgba(204,0,51,${Math.min(0.35, t * 0.5)})`;
+  ctx.fillRect(0, 0, W, H);
+
+  if (deathTimer < 105) {
+    const a = Math.min(1, (105 - deathTimer) / 20);
+    ctx.globalAlpha = a;
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 68px Courier New';
+    ctx.fillText('GAME OVER', W / 2, H / 2 - 16);
+    ctx.font = '26px Courier New';
+    ctx.fillStyle = '#9ca3af';
+    ctx.fillText(`SCORE  ${score}`, W / 2, H / 2 + 30);
+    ctx.globalAlpha = 1;
+  }
+}
+
+// ── LOOP ──────────────────────────────────────────────────────────────────────
+function loop() {
+  update();
+
+  if (state === 'dead') {
+    deathTimer--;
+    if (deathTimer <= 0) {
+      state = 'idle';
+      lastVal = '';
+    }
+  }
+
+  ctx.textAlign = 'left';
+  if (state === 'idle')    drawIdle();
+  if (state === 'running') drawRunning();
+  if (state === 'dead')    drawDead();
+
+  requestAnimationFrame(loop);
+}
+
+reset();
+loop();
+</script>
+</body>
+</html>
