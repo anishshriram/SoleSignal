@@ -1,6 +1,6 @@
 # SoleSignal
 
-Copyright © 2025 Anish Shriram
+Copyright © 2026 Anish Shriram
 All Rights Reserved
 
 This project and its source code are the intellectual property of the author.
