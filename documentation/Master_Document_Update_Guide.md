@@ -21,7 +21,7 @@ This document is a comprehensive list of everything built during MVP implementat
 Add a new subsection after "Basic Architectural Components":
 
 **Backend**
-- Runtime: Node.js 20 (required — RN 0.84 uses `Array.toReversed()` which fails on Node 18)
+- Runtime: Node.js 20 (minimum — see Node version note below; `mobile/package.json` specifies `>= 22.11.0`, both versions are functional)
 - Framework: Express v5
 - Language: TypeScript 6
 - ORM: Prisma (manages schema, migrations, and DB queries — raw SQL is not used directly)
@@ -39,6 +39,11 @@ Add a new subsection after "Basic Architectural Components":
 - GPS: @react-native-community/geolocation
 - Navigation: @react-navigation/native-stack
 - HTTP Client: Axios
+- Theme: Scarlet `#CC0033`, Black `#000000`, White `#FFFFFF` (brand colors); extended palette: `lightGray #F5F5F5`, `darkGray #333333`, `midGray #888888`, `errorRed #D32F2F`, `successGreen #2E7D32`
+- Typography scale: heading (24px/700), subheading (18px/600), body (16px), label (14px)
+- Spacing scale: xs=4, sm=8, md=16, lg=24, xl=32 (used consistently across all screens)
+
+**Node version note:** `mobile/package.json` specifies `"engines": { "node": ">= 22.11.0" }`. All session startup instructions and `.xcode.env.local` reference Node 20 via nvm. Both versions are functional — `Array.toReversed()` works on Node 20+. If using Node 20, npm emits an engine warning but the app builds and runs correctly. The `engines` field in `package.json` should be reconciled to `>= 20.0.0` before final submission.
 
 ### Add: Backend File Structure
 
@@ -93,6 +98,17 @@ The full table should have 14 endpoints, not 12.
 ---
 
 ### 3.2 Corrections to Existing Endpoint Specs
+
+#### updateUserProfile() — PATCH /users/{id}
+
+**Input Arguments — correction:**
+The document does not explicitly list the accepted body fields for this endpoint. The actual accepted fields are:
+```json
+{ "name"?: string, "email"?: string, "phone_number"?: string }
+```
+`email` is an updatable field. At least one field must be provided; an empty body returns 400. The endpoint enforces ownership — the `{id}` in the URL must match the `user_id` in the JWT token or the request is rejected with 403.
+
+---
 
 #### pairSensor() — POST /sensors/pair
 
@@ -337,6 +353,8 @@ These UUIDs were provided by the firmware team and are hardcoded in the mobile a
 
 The BLE scan filters exclusively for devices advertising the Service UUID above. Devices not advertising this UUID are not shown in the pairing list.
 
+**Advertisement name:** The production firmware (`SoloSignal.ino`) advertises as **"Xiao_SoleSignal"**. This is the name users see in the pairing list on the Pairing screen. (During device testing the sensor also appeared as "XIAO_THRESHOLD" — this may vary by firmware build or OS caching.)
+
 ### Tap Pattern Protocol
 
 The firmware communicates tap status via BLE characteristic notifications on the characteristic UUID above:
@@ -476,7 +494,7 @@ Backend is available at `http://localhost:3000`. Database migrations run automat
 ### Local Development (without Docker)
 
 Prerequisites:
-- Node.js 20 (required — will fail on Node 18)
+- Node.js 20 or 22 (Node 18 will fail — `Array.toReversed()` requires Node 20+; `mobile/package.json` specifies `>= 22.11.0` but Node 20 works in practice)
 - PostgreSQL 14 (via Homebrew: `brew services start postgresql@14`)
 
 ```bash
@@ -550,6 +568,10 @@ Output: probability that the current 50-sample window is a tap gesture (0.0–1.
 ---
 
 ### 11.2 Firmware
+
+**Files:**
+- `hardware/SoloSignal.ino` — Production firmware (CNN inference, BLE, SOS trigger)
+- `hardware/demo_game-5.ino` — Demo game firmware variant (supercedes `demo_game-4.ino`; exact changes not yet documented in changelog — verify contents before referencing as current)
 
 **File:** `hardware/SoloSignal.ino`
 
@@ -635,7 +657,11 @@ Training data files are **not included in the repository** (not committed). The 
 
 ### Phone Number Format
 
-`POST /contacts` validates phone numbers against the E.164 format (`+` followed by country code and digits, e.g. `+17321234567`). Plain 10-digit numbers without country code are rejected.
+**Correction:** The document and earlier notes describe this as E.164 validation. The actual regex used is:
+```
+/^\+?[\d\s\-().]{7,15}$/
+```
+This is **more permissive than E.164** — it accepts numbers without a leading `+`, and allows spaces, dashes, dots, and parentheses (e.g. `(732) 123-4567` passes). Strict E.164 (`+` required, digits only, max 15 digits after `+`) is not enforced. Before final submission, decide whether to tighten this regex to true E.164 or update the documentation to reflect the actual accepted formats.
 
 ### SMS Message Format
 
@@ -651,7 +677,7 @@ EMERGENCY ALERT from Jane Smith. Location: 123 College Ave, New Brunswick, NJ 08
 
 **Reverse geocoding:** The backend calls Nominatim (OpenStreetMap) to convert GPS coordinates into a human-readable address before building the SMS body. Nominatim is free and requires no API key, but does require a descriptive `User-Agent` header per their usage policy. If geocoding fails (network unreachable), the SMS falls back to raw GPS coordinates. Implementation: `reverseGeocode()` function in `backend/routes/alerts.ts`.
 
-SMS delivery via Textbelt is retried up to 3 times (per NFR-5). `delivery_status` is set to `pending` on alert creation, `delivered` on success, or `failed` after exhausting retries.
+SMS delivery via Textbelt is retried up to 3 times (per NFR-5). Internally, the alert record is created with `delivery_status: "pending"` before the Textbelt call runs, then immediately updated to `"delivered"` or `"failed"` within the same synchronous request. **The `POST /alerts` response always returns `"delivered"` or `"failed"` — `"pending"` is never observable in the API response.** Only `GET /alerts/:id` would theoretically return `"pending"` if the DB were read during the brief window inside the route handler, which does not happen in practice.
 
 **Note:** The original spec referenced Twilio. Twilio was replaced with Textbelt due to A2P 10DLC registration requirements blocking SMS delivery on all US local numbers, and toll-free verification blocking the trial number. Textbelt requires no carrier registration and delivers immediately with a paid API key (~$0.01/text).
 
@@ -661,6 +687,7 @@ SMS delivery via Textbelt is retried up to 3 times (per NFR-5). `delivery_status
 - Bluetooth and Location (When In Use) permissions declared in `ios/SoleSignalMobile/Info.plist`
 - Node 20 path must be hardcoded in `mobile/ios/.xcode.env.local` for Xcode build phase to resolve the correct Node binary (nvm is not available in Xcode's build environment)
 - `react-native-reanimated` is not included — it is incompatible with React Native 0.84 Hermes headers
+- `NSAllowsLocalNetworking: true` is set in Info.plist App Transport Security config. This allows the app to make plain HTTP requests to local IP addresses (e.g. `http://192.168.x.x:3000`) during development without ATS blocking them. If the backend is deployed to a real server over HTTPS, this flag has no effect and does not need to be removed, but the `BASE_URL` in `mobile/src/services/api.ts` must be updated to the `https://` address.
 
 ### Metro Bundler (Development)
 
