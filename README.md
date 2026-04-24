@@ -26,9 +26,9 @@
  
 ## Overview
  
-There are situations where the act of reaching for a phone is itself dangerous. A person in the presence of an active threat — a domestic abuser, an abductor, or any aggressor monitoring their behavior — cannot always safely call for help or make a visible gesture toward a device. Existing personal safety tools share a common flaw: they require a visible, deliberate action that can be intercepted or punished.
+There are situations where the act of reaching for a phone is itself dangerous. A person in the presence of an active threat cannot always safely call for help or make a visible gesture toward a device. Existing personal safety tools share a common flaw: they require a visible, deliberate action that can be intercepted or punished.
  
-SoleSignal solves this by embedding a sensor in the user's footwear. A specific tap pattern performed discreetly with the foot triggers an emergency SMS alert sent to pre-designated contacts — with no sound, no visible action, and no phone required.
+SoleSignal solves this by embedding a sensor in the user's footwear. A specific tap pattern performed discreetly with the foot triggers an emergency SMS alert sent to pre-designated contacts with no sound, no visible action, and no phone required.
  
 **Key capabilities:**
 - Detects a secret foot tap pattern using FSR (Force Sensitive Resistor) pressure sensors
@@ -228,6 +228,8 @@ The `demov0` through `demov4` directories contain iterative prototype builds dev
 ## Team
  
 **SP26-46 — Rutgers University, School of Engineering**
+***First Place: Electrical and Computer Engineering***
+***First Place: Smart Systems, Sensing, and IoT***
  
 | Name | Role | Contact |
 |---|---|---|
