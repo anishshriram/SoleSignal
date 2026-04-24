@@ -16,7 +16,7 @@ import * as Keychain from 'react-native-keychain';
 // Must be updated when testing on a physical device — 'localhost' won't work
 // because the device is not on the same loopback as the dev machine.
 // On simulator, 'http://localhost:3000' works fine.
-const BASE_URL = 'http://10.75.132.42:3000';
+const BASE_URL = 'http://10.75.129.138:3000';
 
 // Create a shared axios instance with a 10-second request timeout.
 // All exported functions use this instance rather than the global axios,

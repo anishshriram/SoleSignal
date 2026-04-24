@@ -147,7 +147,7 @@ router.post('/', authenticateToken, async (req, res) => {
       // Update the alert record to reflect successful delivery
       await prisma.alert.update({
         where: { id: alert.id },
-        data: { delivery_status: 'delivered', retry_count: MAX_RETRIES - MAX_RETRIES },
+        data: { delivery_status: 'delivered', retry_count: 0 },
       });
 
       return res.status(201).json({

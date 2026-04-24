@@ -556,16 +556,13 @@
 
   function onData(event) {
     const value = new TextDecoder().decode(event.target.value).trim();
-    if (value === '00') {
+    if (value === '0') {
       // idle heartbeat — no action
-    } else if (value === '01') {
-      log('Both sensors held → next slide', 'ok');
+    } else if (value === '2') {
+      log('Toe Held Down → next slide', 'ok');
       next();
-    } else if (value === '11') {
-      log('Toe held → next slide', 'ok');
-      next();
-    } else if (value === '10') {
-      log('Heel held → previous slide', 'warn');
+    } else if (value === '1') {
+      log('Tap Pattern → previous slide', 'warn');
       prev();
     } else {
       log(`rx: "${value}"`);

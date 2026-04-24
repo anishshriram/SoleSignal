@@ -39,7 +39,7 @@ router.post('/', authenticateToken, async (req, res) => {
     }
 
     // Create the contact linked to the authenticated user
-    // is_valid defaults to true in the schema — future validation could set it false
+    // is_valid defaults to false in the schema — reserved for future phone validation logic
     const contact = await prisma.emergencyContact.create({
       data: {
         user_id: req.user!.user_id, // from JWT, not from the request body
