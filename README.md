@@ -2,7 +2,7 @@
  
 > **SP26-46 Capstone Design Project — Rutgers University, Department of Electrical and Computer Engineering**
  
-**SoleSignal** is a shoe-embedded wearable safety system that converts discrete foot tap patterns into emergency SMS alerts. It is designed for situations where reaching for a phone is dangerous or impossible — giving users a silent, invisible way to call for help.
+**SoleSignal** is a shoe-embedded wearable safety system that converts discrete foot tap patterns into emergency SMS alerts. It is designed for situations where reaching for a phone is dangerous or impossible, giving users a silent, invisible way to call for help.
  
 ---
  
