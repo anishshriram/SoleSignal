@@ -230,6 +230,7 @@ The `demov0` through `demov4` directories contain iterative prototype builds dev
 **SP26-46 — Rutgers University, School of Engineering**
 
 ***First Place: Electrical and Computer Engineering***
+
 ***First Place: Smart Systems, Sensing, and IoT***
  
 | Name | Role | Contact |
